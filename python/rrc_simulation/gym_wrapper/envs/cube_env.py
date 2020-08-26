@@ -4,6 +4,12 @@ import enum
 import numpy as np
 import gym
 
+from gym.spaces import Box
+from gym.spaces import Discrete
+from gym.spaces import MultiDiscrete
+from gym.spaces import MultiBinary
+from gym.spaces import Tuple
+from gym.spaces import Dict
 from rrc_simulation import TriFingerPlatform
 from rrc_simulation import visual_objects
 from rrc_simulation.tasks import move_cube
@@ -335,3 +341,74 @@ class CubeEnv(gym.GoalEnv):
             raise ValueError("Invalid action_type")
 
         return robot_action
+
+
+class FlattenDictWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        super(FlattenDictWrapper, self).__init__(env)
+        self.observation_space = gym.spaces.Dict({
+            k: flatten_space(v) 
+            for k, v in env.observation_space.spaces.items()
+            })
+
+    def observation(self, observation):
+        observation = {k: gym.spaces.flatten(self.env.observation_space[k], v)
+                for k, v in observation.items()}
+        return observation
+
+
+def flatten_space(space):
+    """Flatten a space into a single ``Box``.
+    This is equivalent to ``flatten()``, but operates on the space itself. The
+    result always is a `Box` with flat boundaries. The box has exactly
+    ``flatdim(space)`` dimensions. Flattening a sample of the original space
+    has the same effect as taking a sample of the flattenend space.
+    Raises ``NotImplementedError`` if the space is not defined in
+    ``gym.spaces``.
+    Example::
+        >>> box = Box(0.0, 1.0, shape=(3, 4, 5))
+        >>> box
+        Box(3, 4, 5)
+        >>> flatten_space(box)
+        Box(60,)
+        >>> flatten(box, box.sample()) in flatten_space(box)
+        True
+    Example that flattens a discrete space::
+        >>> discrete = Discrete(5)
+        >>> flatten_space(discrete)
+        Box(5,)
+        >>> flatten(box, box.sample()) in flatten_space(box)
+        True
+    Example that recursively flattens a dict::
+        >>> space = Dict({"position": Discrete(2),
+        ...               "velocity": Box(0, 1, shape=(2, 2))})
+        >>> flatten_space(space)
+        Box(6,)
+        >>> flatten(space, space.sample()) in flatten_space(space)
+        True
+    """
+    if isinstance(space, Box):
+        return Box(space.low.flatten(), space.high.flatten())
+    if isinstance(space, Discrete):
+        return Box(low=0, high=1, shape=(space.n, ))
+    if isinstance(space, Tuple):
+        space = [flatten_space(s) for s in space.spaces]
+        return Box(
+            low=np.concatenate([s.low for s in space]),
+            high=np.concatenate([s.high for s in space]),
+        )
+    if isinstance(space, Dict):
+        space = [flatten_space(s) for s in space.spaces.values()]
+        return Box(
+            low=np.concatenate([s.low for s in space]),
+            high=np.concatenate([s.high for s in space]),
+        )
+    if isinstance(space, MultiBinary):
+        return Box(low=0, high=1, shape=(space.n, ))
+    if isinstance(space, MultiDiscrete):
+        return Box(
+            low=np.zeros_like(space.nvec),
+            high=space.nvec,
+        )
+    raise NotImplementedError
+
