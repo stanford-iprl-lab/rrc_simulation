@@ -76,9 +76,9 @@ class Pose:
         return goal_to_json(self)
 
     @classmethod
-    def from_dict(cls, dict):
+    def from_dict(cls, d):
         """Create Pose instance from dictionary."""
-        return cls(dict["position"], dict["orientation"])
+        return cls(d["position"], d["orientation"])
 
     @classmethod
     def from_json(cls, json_str):

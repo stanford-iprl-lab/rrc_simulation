@@ -145,8 +145,7 @@ class CubeEnv(gym.GoalEnv):
         elif self.action_type == ActionType.POSITION:
             self.action_space = spaces.robot_position.gym
         elif self.action_type == ActionType.TORQUE_AND_POSITION:
-            self.action_space = gym.spaces.Dict(
-                {
+            self.action_space = gym.spaces.Dict( {
                     "torque": spaces.robot_torque.gym,
                     "position": spaces.robot_position.gym,
                 }
@@ -257,6 +256,10 @@ class CubeEnv(gym.GoalEnv):
 
         return observation, reward, is_done, self.info
 
+    def _sample_goal(self):
+        goal_object_pose = self.initializer.get_goal()
+        return goal_object_pose.to_dict()
+
     def reset(self):
         # reset simulation
         del self.platform
@@ -274,10 +277,7 @@ class CubeEnv(gym.GoalEnv):
             initial_object_pose=initial_object_pose,
         )
 
-        self.goal = {
-            "position": goal_object_pose.position,
-            "orientation": goal_object_pose.orientation,
-        }
+        self.goal = goal_object_pose.to_dict()
 
         # visualize the goal
         if self.visualization:
@@ -347,12 +347,77 @@ class CubeEnv(gym.GoalEnv):
 
 
 class FlattenDictWrapper(gym.ObservationWrapper):
-    def __init__(self, env):
+    """Wrapper to make rrc env baselines and VDS compatible"""
+    def __init__(self, env, step_rew_thresh=0.01):
         super(FlattenDictWrapper, self).__init__(env)
+        self._sample_goal_fun = None
+        self._max_episode_steps = env._max_episode_steps
         self.observation_space = gym.spaces.Dict({
             k: flatten_space(v) 
             for k, v in env.observation_space.spaces.items()
             })
+        self._step_rew_thresh = step_rew_thresh
+
+    def update_goal_sampler(self, goal_sampler):
+        self._sample_goal_fun = goal_sampler
+
+    def sample_goal_fun(self, **kwargs):
+        if self._sample_goal_fun is not None:
+            return self._sample_goal_fun(**kwargs)
+        else:
+            obs_len = len(kwargs.get('obs_dict', [None]))
+            return np.array([self._sample_goal() for _ in range(obs_len)])
+
+    @property
+    def goal(self):
+        return np.concatenate(list(self.unwrapped.goal.values()))
+
+    @goal.setter
+    def goal(self, g):
+        pos, ori = g[...,:3], g[...,3:]
+        self.unwrapped.goal = {'position': pos, 'orientation': ori}
+
+    def compute_reward(self, achieved_goal, desired_goal, info):
+        if len(achieved_goal.shape) > 1:
+            r = []
+            info = {"difficulty": self.initializer.difficulty}
+            for i in range(achieved_goal.shape[0]):
+                pos, ori = achieved_goal[i,:3], achieved_goal[i,3:]
+                ag = dict(position=pos, orientation=ori)
+                pos, ori = desired_goal[i,:3], desired_goal[i,3:]
+                dg = dict(position=pos, orientation=ori)
+                r.append(self.unwrapped.compute_reward(ag, dg, info))
+            return np.array(r)
+        achieved_goal = dict(position=achieved_goal[...,:3], orientation=achieved_goal[...,3:])
+        desired_goal = dict(position=desired_goal[...,:3], orientation=desired_goal[...,3:])
+        return self.unwrapped.compute_reward(achieved_goal, desired_goal, info)
+    
+    def _sample_goal(self):
+        return np.concatenate(list(self.initializer.get_goal().to_dict().values()))
+
+    def reset(self, *args, reset_goal=True):
+        self.env._elapsed_steps = 0
+        obs = super(FlattenDictWrapper, self).reset(*args)
+        if reset_goal and self._sample_goal_fun is not None:
+            self.goal = self.sample_goal_fun(obs_dict=obs)
+        else:
+            self.unwrapped.goal = self.unwrapped._sample_goal().copy()
+        goal_object_pose = move_cube.Pose.from_dict(self.unwrapped.goal)
+        self.unwrapped.goal_marker = visual_objects.CubeMarker(
+            width=0.065,
+            position=goal_object_pose.position,
+            orientation=goal_object_pose.orientation,
+            physicsClientId=self.platform.simfinger._pybullet_client_id,
+        )
+        obs = self.unwrapped._create_observation(0)
+        return self.observation(obs)
+
+    def step(self, action):
+        o, r, d, i = super(FlattenDictWrapper, self).step(action)
+        step_rew = r / self.frameskip
+        i = i.copy()
+        i['is_success'] = step_rew < self._step_rew_thresh
+        return o, r, d, i
 
     def observation(self, observation):
         observation = {k: gym.spaces.flatten(self.env.observation_space[k], v)

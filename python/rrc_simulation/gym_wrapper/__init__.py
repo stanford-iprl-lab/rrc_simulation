@@ -10,5 +10,6 @@ register(
             'action_type': cube_env.ActionType.POSITION,
             'frameskip': 100},
     entry_point="rrc_simulation.gym_wrapper.envs.cube_env:CubeEnv",
+    max_episode_steps=38
 )
 
