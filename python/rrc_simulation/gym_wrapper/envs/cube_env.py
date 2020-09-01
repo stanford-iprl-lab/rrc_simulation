@@ -362,11 +362,7 @@ class FlattenDictWrapper(gym.ObservationWrapper):
         self._sample_goal_fun = goal_sampler
 
     def sample_goal_fun(self, **kwargs):
-        if self._sample_goal_fun is not None:
-            return self._sample_goal_fun(**kwargs)
-        else:
-            obs_len = len(kwargs.get('obs_dict', [None]))
-            return np.array([self._sample_goal() for _ in range(obs_len)])
+        return self._sample_goal_fun(**kwargs)
 
     @property
     def goal(self):
@@ -374,6 +370,9 @@ class FlattenDictWrapper(gym.ObservationWrapper):
 
     @goal.setter
     def goal(self, g):
+        if isinstance(g, dict):
+            self.unwrapped.goal = g
+            return
         pos, ori = g[...,:3], g[...,3:]
         self.unwrapped.goal = {'position': pos, 'orientation': ori}
 
@@ -400,8 +399,6 @@ class FlattenDictWrapper(gym.ObservationWrapper):
         obs = super(FlattenDictWrapper, self).reset(*args)
         if reset_goal and self._sample_goal_fun is not None:
             self.goal = self.sample_goal_fun(obs_dict=obs)
-        else:
-            self.unwrapped.goal = self.unwrapped._sample_goal().copy()
         goal_object_pose = move_cube.Pose.from_dict(self.unwrapped.goal)
         self.unwrapped.goal_marker = visual_objects.CubeMarker(
             width=0.065,
