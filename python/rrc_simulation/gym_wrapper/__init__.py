@@ -13,3 +13,25 @@ register(
     max_episode_steps=38
 )
 
+initializer = cube_env.RandomInitializer(difficulty=2)
+
+register(
+    id="real_robot_challenge_phase_2-v1",
+    kwargs={'initializer': initializer,
+            'action_type': cube_env.ActionType.POSITION,
+            'frameskip': 100},
+    entry_point="rrc_simulation.gym_wrapper.envs.cube_env:CubeEnv",
+    max_episode_steps=38
+)
+
+initializer = cube_env.RandomInitializer(difficulty=3)
+
+register(
+    id="real_robot_challenge_phase_3-v1",
+    kwargs={'initializer': initializer,
+            'action_type': cube_env.ActionType.POSITION,
+            'frameskip': 100},
+    entry_point="rrc_simulation.gym_wrapper.envs.cube_env:CubeEnv",
+    max_episode_steps=38
+)
+
