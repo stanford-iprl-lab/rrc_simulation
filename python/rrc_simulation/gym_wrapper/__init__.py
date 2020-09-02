@@ -13,6 +13,15 @@ register(
     max_episode_steps=38
 )
 
+register(
+    id="real_robot_challenge_phase_push-v1",
+    kwargs={'initializer': initializer,
+            'action_type': cube_env.ActionType.POSITION,
+            'frameskip': 100},
+    entry_point="rrc_simulation.gym_wrapper.envs.cube_env:PushCubeEnv",
+    max_episode_steps=38
+)
+
 initializer = cube_env.RandomInitializer(difficulty=2)
 
 register(
