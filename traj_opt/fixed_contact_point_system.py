@@ -15,14 +15,37 @@ class FixedContactPointSystem:
               ):
     print("Initialize fixed contact point system")
 
-    self.p = 100
+    self.fnum = 2
+    self.qnum = 3
+    self.dim = 6
 
-    self.obj_size = (1, 2, 3)
+    self.p = 100
 
     self.obj_pose = obj_pose
     self.obj_shape = obj_shape # (width, length, height), (x, y, z)
     self.obj_mass = obj_mass
     self.obj_mu = 1
+
+    # Contact point position parameters
+    # 1 finger on face 5, 1 finger on face 3
+    self.cp_params = [
+                      [-1, 0, 0],
+                      [1, 0, 0],
+                     ]
+    self.cp_list = self.get_contact_points_from_cp_params(self.cp_params)
+
+    # Contact model force selection matrix
+    l_i = 4
+    self.l_i = l_i
+    H_i = np.array([
+                  [1, 0, 0, 0, 0, 0],
+                  [0, 1, 0, 0, 0, 0],
+                  [0, 0, 1, 0, 0, 0],
+                  [0, 0, 0, 1, 0, 0],
+                  ])
+    self.H = np.zeros((l_i*self.fnum,self.dim*self.fnum))
+    for i in range(self.fnum):
+      self.H[i*l_i:i*l_i+l_i, i*self.dim:i*self.dim+self.dim] = H_i
 
     self.platform = platform 
 
@@ -50,7 +73,43 @@ class FixedContactPointSystem:
   Input:
   x: object pose [px, py, pz, qw, qx, qy, qz]
   """
-  #def get_grasp_matrix(self, x):
+  def get_grasp_matrix(self, x):
+
+    # Transformation matrix from object frame to world frame
+    quat_o_2_w = [x[3], x[4], x[5], x[6]]
+    H_o_2_w = self.get_H_o_2_w(x)
+
+    G_list = []
+
+    # Calculate G_i (grasp matrix for each finger)
+    for c in self.cp_list:
+      cp_pos_of = c["position"] # Position of contact point in object frame
+      quat_cp_2_o = c["orientation"] # Orientation of contact point frame w.r.t. object frame
+
+      S = np.array([
+                   [0, -cp_pos_of[2], cp_pos_of[1]],
+                   [cp_pos_of[2], 0, -cp_pos_of[0]],
+                   [-cp_pos_of[1], cp_pos_of[0], 0]
+                   ])
+
+      P_i = np.eye(6)
+      P_i[3:6,0:3] = S
+
+      # Orientation of cp frame w.r.t. world frame
+      # quat_cp_2_w = quat_o_2_w * quat_cp_2_o
+      quat_cp_2_w = utils.multiply_quaternions(quat_o_2_w, quat_cp_2_o)
+      # R_i is rotation matrix from contact frame i to world frame
+      R_i = utils.get_matrix_from_quaternion(quat_cp_2_w)
+      R_i_bar = np.zeros((6,6))
+      R_i_bar[0:3,0:3] = R_i
+      R_i_bar[3:6,3:6] = R_i
+
+      G_iT = R_i_bar.T @ P_i.T
+      G_list.append(G_iT)
+    
+    GT_full = np.concatenate(G_list)
+    GT = self.H @ GT_full
+    return GT.T
 
   """
   Get 6x6 object inertia matrix
@@ -100,21 +159,33 @@ class FixedContactPointSystem:
     return H
 
   """
+  Get list of contact point dicts given cp_params list
+  Each contact point is: {"position_of", "orientation_of"}
+  """
+  def get_contact_points_from_cp_params(self, cp_params):
+    cp_list = []
+    for param in cp_params:
+      pos_of, quat_of = self.cp_param_to_cp_of(param)
+      cp = {"position": pos_of, "orientation": quat_of}
+      cp_list.append(cp)
+    return cp_list
+      
+  """
   Get contact point position and orientation in object frame (OF)
   Input:
   (x_param, y_param, z_param) tuple
   """
-  def cp_params_to_cp_of(self, cp_param):
+  def cp_param_to_cp_of(self, cp_param):
     pnorm = self.get_pnorm(cp_param)
 
     print("cp_param: {}".format(cp_param))
     print("pnorm: {}".format(pnorm))
 
-    cp_wf = []
+    cp_of = []
     # Get cp position in OF
     for i in range(3):
-      cp_wf.append(-self.obj_size[i]/2 + (cp_param[i]+1)*self.obj_size[i]/2)
-    cp_wf = np.asarray([cp_wf])
+      cp_of.append(-self.obj_shape[i]/2 + (cp_param[i]+1)*self.obj_shape[i]/2)
+    cp_of = np.asarray(cp_of)
 
     # TODO: Find analytical way of computing theta
     # Compute derivatives dx, dy, dz of pnorm
@@ -160,42 +231,42 @@ class FixedContactPointSystem:
     elif z_param == -1:
       quat = (np.sqrt(2)/2, 0, -np.sqrt(2)/2, 0)
 
-    return cp_wf, quat
+    return cp_of, quat
 
-  def test_cp_params_to_cp_of(self):
+  def test_cp_param_to_cp_of(self):
     print("\nP1")
     p1 = (0, -1, 0)
-    q = self.cp_params_to_cp_of(p1)
+    q = self.cp_param_to_cp_of(p1)
     print("quat: {}".format(q))
 
     print("\nP2")
     p2 = (0, 1, 0)
-    q = self.cp_params_to_cp_of(p2)
+    q = self.cp_param_to_cp_of(p2)
     print("quat: {}".format(q))
 
     print("\nP3")
     p3 = (1, 0, 0)
-    q = self.cp_params_to_cp_of(p3)
+    q = self.cp_param_to_cp_of(p3)
     print("quat: {}".format(q))
 
     print("\nP4")
     p4 = (0, 0, 1)
-    q = self.cp_params_to_cp_of(p4)
+    q = self.cp_param_to_cp_of(p4)
     print("quat: {}".format(q))
 
     print("\nP5")
     p5 = (-1, 0, 0)
-    q = self.cp_params_to_cp_of(p5)
+    q = self.cp_param_to_cp_of(p5)
     print("quat: {}".format(q))
 
     print("\nP6")
     p6 = (0, 0, -1)
-    q = self.cp_params_to_cp_of(p6)
+    q = self.cp_param_to_cp_of(p6)
     print("quat: {}".format(q))
 
 def main():
   system = FixedContactPointSystem()
-  system.test_cp_params_to_cp_of()
+  system.test_cp_param_to_cp_of()
 
 if __name__ == "__main__":
   main()
