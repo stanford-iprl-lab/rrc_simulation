@@ -348,7 +348,7 @@ class CubeEnv(gym.GoalEnv):
 
 class FlattenDictWrapper(gym.ObservationWrapper):
     """Wrapper to make rrc env baselines and VDS compatible"""
-    def __init__(self, env, step_rew_thresh=0.002):
+    def __init__(self, env, step_rew_thresh=0.01):
         super(FlattenDictWrapper, self).__init__(env)
         self._sample_goal_fun = None
         self._max_episode_steps = env._max_episode_steps
