@@ -12,8 +12,71 @@ from rrc_simulation import TriFingerPlatform
 from rrc_simulation import visual_objects
 from rrc_simulation.tasks import move_cube
 from rrc_simulation.gym_wrapper.envs.cube_env import ActionType
+from rrc_simulation.gym_wrapper.utils import configurable
 
 
+MAX_DIST = move_cube._max_cube_com_distance_to_center
+DIST_THRESH = move_cube._CUBE_WIDTH / 4
+REW_BONUS = 1
+
+
+@configurable(pickleable=True)
+class CurriculumInitializer:
+    """Initializer that samples random initial states and goals."""
+
+    def __init__(self, difficulty=1, initial_dist=move_cube._CUBE_WIDTH,
+                 num_levels=4, num_episodes=5):
+        """Initialize.
+
+        Args:
+            initial_dist (float): Distance from center of arena
+            num_levels (int): Number of steps to maximum radius
+            num_episodes (int): Number of episodes to compute mean over
+        """
+        self.difficulty = difficulty
+        self.initial_dist = initial_dist
+        self.num_levels = num_levels
+        self.current_level = 0
+        self.levels = np.linspace(self.initial_dist, MAX_DIST, num_levels)
+        self.episode_dist = np.array([np.inf for _ in range(num_episodes)])
+
+    def random_xy(self):
+        # sample uniform position in circle (https://stackoverflow.com/a/50746409)
+        radius = self.initial_dist * np.sqrt(np.random.sample())
+        theta = np.random.uniform(0, 2 * np.pi)
+
+        # x,y-position of the cube
+        x = radius * np.cos(theta)
+        y = radius * np.sin(theta)
+
+        return x, y
+
+    def update_initializer(self, final_dist):
+        self.episode_dist = np.roll(self.episode_dist, 1)
+        self.episode_dist[0] = final_dist
+        if self.current_level >= self.num_levels:
+            return
+        self.current_level += 1
+        if np.mean(self.episode_dist) < DIST_THRESH:
+            print("UPDATING INITIALIZER TO SAMPLE TO DISTANCE")
+            print("Old sampling distance: {}/New sampling distance: {}".format(
+                self.initial_dist, self.levels[self.current_level]))
+            self.initial_dist = self.levels[self.current_level]
+
+    def get_initial_state(self):
+        """Get a random initial object pose (always on the ground)."""
+        x, y = self.random_xy()
+        initial_pose = move_cube.sample_goal(difficulty=-1)
+        z = initial_pose.position[-1]
+        initial_pose.position = np.array((x, y, z))
+        return initial_pose
+
+    def get_goal(self):
+        """Get a random goal depending on the difficulty."""
+        return move_cube.sample_goal(difficulty=self.difficulty)
+
+
+@configurable(pickleable=True)
 class PushCubeEnv(gym.Env):
     def __init__(
         self,
@@ -21,7 +84,6 @@ class PushCubeEnv(gym.Env):
         action_type=ActionType.POSITION,
         frameskip=1,
         visualization=False,
-        enable_cameras=False,
         ):
         """Initialize.
 
@@ -42,7 +104,6 @@ class PushCubeEnv(gym.Env):
         self.initializer = initializer
         self.action_type = action_type
         self.visualization = visualization
-        self.enable_cameras = enable_cameras
 
         if frameskip < 1:
             raise ValueError("frameskip cannot be less than 1.")
@@ -147,7 +208,6 @@ class PushCubeEnv(gym.Env):
             visualization=self.visualization,
             initial_robot_position=initial_robot_position,
             initial_object_pose=initial_object_pose,
-            enable_cameras=self.enable_cameras
         )
 
         self.goal = {
@@ -168,14 +228,6 @@ class PushCubeEnv(gym.Env):
         self.step_count = 0
 
         return self._create_observation(0)
-
-    def render(self, mode='rgb', camera_idx=1):
-        assert self.enable_cameras, 'must enable camera to get images from simulator'
-        if self.platform:
-           obs = self.platform.get_camera_observation(self.step_count)
-           image = obs.cameras[camera_idx].image
-           return image
-        return None
 
     def _create_observation(self, t):
         robot_observation = self.platform.get_robot_observation(t)
@@ -224,6 +276,9 @@ class PushCubeEnv(gym.Env):
 
         reward = 750 * reward_term_1 + 250 * reward_term_2
 
+        if current_dist_to_goal < DIST_THRESH:
+            reward += REW_BONUS
+
         return reward
 
     def step(self, action):
@@ -265,6 +320,13 @@ class PushCubeEnv(gym.Env):
             )
 
         is_done = self.step_count == move_cube.episode_length
+        if is_done and isinstance(self.initializer, CurriculumInitializer):
+            final_dist = np.linalg.norm(
+                observation["goal_object_position"]
+                - observation["object_position"]
+            )
+            self.initializer.update_initializer(final_dist)
+
         return observation, reward, is_done, self.info
 
 
