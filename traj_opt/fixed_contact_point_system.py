@@ -271,7 +271,42 @@ class FixedContactPointSystem:
     return SX(M)
 
   """
+  Linearized friction cone constraint
+  Approximate cone as an inner pyramid
+  Handles absolute values by considering positive and negative bound as two constraints
+  Return:
+  f_constraints: (nGrid*fnum*2*2)x1 vector with friction cone constraints
+  where nGrid*fnum element corresponds to constraints of finger fnum at time nGrid
+  Every element in f_constraints must be >= 0 (lower bound 0, upper bound np.inf)
+  """
+  def friction_cone_constraints(self,l_flat):
+    l = self.l_unpack(l_flat)
+
+    # Positive bound
+    f1_constraints = SX.zeros((self.nGrid, self.fnum*2))
+    # Negative bound
+    f2_constraints = SX.zeros((self.nGrid, self.fnum*2))
+
+    mu = np.sqrt(2) * self.obj_mu # Inner approximation of cone
+
+    for col in range(self.fnum):
+      # abs(fy) <= mu * fx
+      f1_constraints[:,2*col] = mu * l[:,col*self.l_i] + l[:,col*self.l_i + 1]
+      f2_constraints[:,2*col] = -1 * l[:,col*self.l_i + 1] + mu * l[:,col*self.l_i]
+
+      # abs(fz) <= mu * fx
+      f1_constraints[:,2*col+1] = mu * l[:,col*self.l_i] + l[:,col*self.l_i + 2]
+      f2_constraints[:,2*col+1] = -1 * l[:,col*self.l_i + 2] + mu * l[:,col*self.l_i]
+
+    f_constraints = vertcat(f1_constraints, f2_constraints)
+    #print(l)
+    #print("friction cones: {}".format(f_constraints))
+    #quit()
+    return f_constraints
+
+  """
   Constrain quaternions to be unit quaternions
+  Not used
   """
   def unit_quat_constraint(self, s_flat):
     # Unpack variables
@@ -603,7 +638,7 @@ class FixedContactPointSystem:
     l_epsilon = 0
     # Limits for one finger
     f1_l_range = np.array([
-                         [-np.inf, np.inf], # c1 fn force range
+                         [0, np.inf], # c1 fn force range
                          [-np.inf, np.inf], # c1 ft force range
                          [-np.inf, np.inf], # c1 ft force range
                          [-np.inf, np.inf], # c1 ft force range
@@ -645,8 +680,8 @@ class FixedContactPointSystem:
     s_traj = self.s_pack(x_traj, dx_traj)
     
     l_traj = np.zeros(self.l_unpack(l_var).shape)
-    l_traj[:,0] = -0.1
-    l_traj[:,4] = -0.1
+    #l_traj[:,0] = -0.1
+    #l_traj[:,4] = -0.1
 
     z_traj = self.decvar_pack(t_traj, s_traj, self.l_pack(l_traj))
     

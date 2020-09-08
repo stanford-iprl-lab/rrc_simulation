@@ -94,6 +94,12 @@ class FixedContactPointOpt:
     print(self.dx_soln)
     print(self.l_soln)
 
+    # Check that all quaternions are unit quaternions
+    print("Check quaternion magnitudes")
+    for i in range(self.nGrid):
+      quat = self.x_soln[i, 3:]
+      print(np.linalg.norm(quat))
+   
     # Final distance to goal
     #eef_final = self.system.get_eef_pos_world(self.q_soln)[-1, 0:2]
     #self.final_dist = norm_2(eef_final - eef_goal)
@@ -109,7 +115,7 @@ class FixedContactPointOpt:
   def cost_func(self,t,s_flat,l_flat,x_goal):
     cost = 0
     R = np.eye(self.system.fnum * self.system.l_i)
-    Q = np.eye(self.system.x_dim) * 2
+    Q = np.eye(self.system.x_dim)
 
     l = self.system.l_unpack(l_flat) 
     x,dx = self.system.s_unpack(s_flat)
@@ -190,8 +196,13 @@ class FixedContactPointOpt:
     #    lbg.append(-1e-3)
     #    ubg.append(1e-3)
 
-    # TODO: Friction constraints
-    # Figure out how do this in 3d - refer to TriFinger paper
+    # Linearized friction cone constraints
+    f_constraints = system.friction_cone_constraints(l)
+    for r in range(f_constraints.shape[0]):
+      for c in range(f_constraints.shape[1]):
+        g.append(f_constraints[r,c])
+        lbg.append(0)
+        ubg.append(np.inf)
 
     return vertcat(*g), vertcat(*lbg), vertcat(*ubg)
     
