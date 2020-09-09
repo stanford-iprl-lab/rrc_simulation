@@ -23,7 +23,7 @@ class FixedContactPointSystem:
     self.dt = dt
     self.tf = dt * (nGrid-1) # Final time
 
-    self.fnum = 2
+    self.fnum = 3
     self.qnum = 3
     self.obj_dof = 6
     self.x_dim = 7 # Dimension of object pose
@@ -43,6 +43,7 @@ class FixedContactPointSystem:
     self.cp_params = [
                       [-1, 0, 0],
                       [1, 0, 0],
+                      [0, 1, 0],
                      ]
     #self.cp_params = [
     #                  [0, 0, 1],

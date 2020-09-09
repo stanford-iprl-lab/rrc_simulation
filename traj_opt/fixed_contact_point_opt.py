@@ -115,7 +115,7 @@ class FixedContactPointOpt:
   def cost_func(self,t,s_flat,l_flat,x_goal):
     cost = 0
     R = np.eye(self.system.fnum * self.system.l_i)
-    Q = np.eye(self.system.x_dim)
+    Q = np.eye(self.system.x_dim) * 3
 
     l = self.system.l_unpack(l_flat) 
     x,dx = self.system.s_unpack(s_flat)
