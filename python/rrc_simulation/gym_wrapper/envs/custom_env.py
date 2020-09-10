@@ -68,7 +68,8 @@ class CurriculumInitializer:
             print("UPDATING INITIALIZER TO SAMPLE TO DISTANCE")
             print("Old sampling distance: {}/New sampling distance: {}".format(
                 sample_radius, self.levels[min(self.num_levels - 1, self._current_level + 1)]))
-            self._current_level += 1
+            if self._current_level < self.num_levels:
+                self._current_level += 1
 
     def get_initial_state(self):
         """Get a random initial object pose (always on the ground)."""
@@ -80,13 +81,12 @@ class CurriculumInitializer:
 
     @property
     def goal_sample_radius(self):
-        if self._current_level == self.num_levels:
+        if self._current_level >= self.num_levels:
             sample_radius_min = 0.
         else:
             sample_radius_min = self.levels[self.current_level]
-        sample_radius_max = self.levels[min(self.num_levels - 1, self._current_level+1)]
+        sample_radius_max = self.levels[min(self.num_levels - 1, self._current_level + 1)]
         return (sample_radius_min, sample_radius_max)
-
 
     def get_goal(self):
         """Get a random goal depending on the difficulty."""
@@ -296,7 +296,7 @@ class PushCubeEnv(gym.Env):
         )
         reward_term_2 = previous_dist_to_goal - current_dist_to_goal
 
-        reward = 750 * reward_term_1 + 500 * reward_term_2
+        reward = 500 * reward_term_1 + 250 * reward_term_2
 
         if current_dist_to_goal < DIST_THRESH:
             reward += REW_BONUS
@@ -352,8 +352,8 @@ class PushCubeEnv(gym.Env):
             if not isinstance(goal_pose, move_cube.Pose):
                 goal_pose = move_cube.Pose.from_dict(goal_pose)
             object_pose = move_cube.Pose.from_dict(dict(
-                position=observation['object_position'],
-                orientation=observation['object_orientation']))
+                position=observation['object_position'].flatten(),
+                orientation=observation['object_orientation'].flatten()))
             self.initializer.update_initializer(final_pose, goal_pose)
             self.info['final_score'] = move_cube.evaluate_state(
                 goal_pose, object_pose, self.info['difficulty'])
@@ -441,7 +441,7 @@ class FlattenGoalWrapper(gym.ObservationWrapper):
 
 class DistRewardWrapper(gym.RewardWrapper):
     def __init__(self, env, target_dist=0.156, dist_coef=2., 
-                 final_step_only=False):
+                 final_step_only=True):
         super(DistRewardWrapper, self).__init__(env)
         self._target_dist = target_dist  # 0.156
         self._dist_coef = dist_coef
@@ -470,22 +470,22 @@ class DistRewardWrapper(gym.RewardWrapper):
         return reward + self._dist_coef * (1 - final_dist/self.target_dist)
 
     def compute_goal_dist(self, info):
-        goal_pose = self.goal 
-        if not isinstance(goal_pose, move_cube.Pose):
-            goal_pose = move_cube.Pose.from_dict(goal_pose)
+        goal_pose = self.unwrapped.goal 
+        assert isinstance(goal_pose, (dict, move_cube.Pose)), "type(goal_pose) got {}, expected dict or move_cube.Pose".format(type(goal_pose))
+        if isinstance(goal_pose, dict):
+            goal_pose = np.asarray(goal_pose['position']).flatten()
+        elif isinstance(goal_pose, move_cube.Pose):
+            goal_pose = np.asarray(goal_pose.position).flatten()
         cube_state = self.platform.cube.get_state()
-        object_pose = move_cube.Pose(
-                np.asarray(cube_state[0]),
-                np.asarray(cube_state[1]))
+        object_pose = np.asarray(cube_state[0]).flatten()
         pos_idx = 3 if info['difficulty'] > 3 else 2
-        return np.linalg.norm(object_pose.position[:pos_idx] -
-                              goal_pose.position[:pos_idx])
+        return np.linalg.norm(object_pose[:pos_idx] - goal_pose[:pos_idx])
 
 
 class LogInfoWrapper(gym.Wrapper):
     valid_keys = ['final_dist', 'final_score', 'is_success']
 
-    def __init__(self, env, info_keys=dict()):
+    def __init__(self, env, info_keys=[]):
         super(LogInfoWrapper, self).__init__(env)
         if isinstance(env.initializer, CurriculumInitializer):
             new_keys = ['init_sample_radius','goal_sample_radius']
@@ -495,13 +495,13 @@ class LogInfoWrapper(gym.Wrapper):
         self.info_keys = info_keys
 
     def compute_goal_dist(self, info, score=False):
-        goal_pose = self.goal 
+        goal_pose = self.unwrapped.goal 
         if not isinstance(goal_pose, move_cube.Pose):
             goal_pose = move_cube.Pose.from_dict(goal_pose)
         cube_state = self.platform.cube.get_state()
         object_pose = move_cube.Pose(
-                np.asarray(cube_state[0]),
-                np.asarray(cube_state[1]))
+                np.asarray(cube_state[0]).flatten(),
+                np.asarray(cube_state[1]).flatten())
         if score:
             return move_cube.evaluate_state(goal_pose, object_pose,
                                             info['difficulty'])
@@ -520,10 +520,13 @@ class LogInfoWrapper(gym.Wrapper):
                 elif k == 'is_success' and d:
                     i[k] = self.compute_goal_dist(i) < DIST_THRESH 
                 elif k == 'init_sample_radius' and d:
-                    sample_radius = self.initializer.levels[self.initializer.current_level]
+                    initializer = self.unwrapped.initializer
+                    sample_radius = np.linalg.norm(initializer.initial_pose.position[:2])
                     i[k] = sample_radius
                 elif k == 'goal_sample_radius' and d:
-                    i[k] = self.initializer.goal_sample_radius
+                    initializer = self.unwrapped.initializer
+                    sample_radius = np.linalg.norm(initializer.goal_pose.position[:2])
+                    i[k] = sample_radius
 
         return o, r, d, i
 
