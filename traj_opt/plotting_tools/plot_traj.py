@@ -33,22 +33,23 @@ def plot_traj(npz_file_string, save_string, save_plot=True, save_anim=True):
   x_soln  = npzfile["x"]
   dx_soln = npzfile["dx"]
   l_soln  = npzfile["l"]
+  l_wf_soln  = npzfile["l_wf"]
   dt      = npzfile["dt"]
 
-  l_i = 4
+  l_i = 3
 
   print("*****************************************************************")
   print("PLOTTING")
   print("*****************************************************************")
   # Plots
-  mpl.rcParams["figure.figsize"] = [15.0, 9.0] 
+  mpl.rcParams["figure.figsize"] = [20.0, 16.0] 
   mpl.rcParams["legend.fontsize"] = "small"
   mpl.rcParams["xtick.labelsize"] = "small"
   mpl.rcParams["ytick.labelsize"] = "small"
   mpl.rcParams["axes.labelsize"] = 10
   mpl.rcParams["axes.titlepad"] = 14
   #mpl.rcParams["figure.dpi"] = 400
-  nr = 2
+  nr = 3
   nc = 4
   plt.figure()
   plt.suptitle("Goal pose [x,y,theta]: {}".format(x_goal))
@@ -125,14 +126,42 @@ def plot_traj(npz_file_string, save_string, save_plot=True, save_anim=True):
   plt.title("Z direction Contact forces")
   plt.ticklabel_format(useOffset=False)
 
-  # Contact forces - moment around x
-  plt.subplot(nr, nc, 8)
+  # Contact forces in world frame
+  # Normal Contact forces
+  plt.subplot(nr, nc, 9)
   for i in range(fnum):
-    plt.plot(t_soln,l_soln[:,i*l_i+3],'.-',label="Contact {}".format(i))
+    plt.plot(t_soln,l_wf_soln[:,i*l_i],'.-',label="Contact {}".format(i))
   plt.legend()
   plt.xlabel("time (s)")
-  plt.title("Moment around x contact forces")
+  plt.title("WORLD FRAME X ontact forces")
   plt.ticklabel_format(useOffset=False)
+  
+  # Contact forces - y
+  plt.subplot(nr, nc, 10)
+  for i in range(fnum):
+    plt.plot(t_soln,l_wf_soln[:,i*l_i+1],'.-',label="Contact {}".format(i))
+  plt.legend()
+  plt.xlabel("time (s)")
+  plt.title("WORLD FRAME Y direction contact forces")
+  plt.ticklabel_format(useOffset=False)
+  
+  # Contact forces - z
+  plt.subplot(nr, nc, 11)
+  for i in range(fnum):
+    plt.plot(t_soln,l_wf_soln[:,i*l_i+2],'.-',label="Contact {}".format(i))
+  plt.legend()
+  plt.xlabel("time (s)")
+  plt.title("WORLD FRAME Z direction ontact forces")
+  plt.ticklabel_format(useOffset=False)
+
+  # Contact forces - moment around x
+  #plt.subplot(nr, nc, 8)
+  #for i in range(fnum):
+  #  plt.plot(t_soln,l_soln[:,i*l_i+3],'.-',label="Contact {}".format(i))
+  #plt.legend()
+  #plt.xlabel("time (s)")
+  #plt.title("Moment around x contact forces")
+  #plt.ticklabel_format(useOffset=False)
 
   if save_plot:
     plt.savefig("{}.png".format(save_string))
