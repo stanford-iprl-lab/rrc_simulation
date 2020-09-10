@@ -10,6 +10,7 @@ class FixedContactPointSystem:
   def __init__(self,
                nGrid     = 100,
                dt        = 0.1,
+               cp_params = None,
                platform  = None,
                obj_pose  = None,
                obj_shape = None,
@@ -37,18 +38,8 @@ class FixedContactPointSystem:
     self.obj_mu = 1
 
     self.gravity = -10
-
-    # Contact point position parameters
-    # 1 finger on face 5, 1 finger on face 3
-    self.cp_params = [
-                      [0, 1, 0],
-                      [0, -1, 0],
-                      [-1, 0, 0],
-                     ]
-    #self.cp_params = [
-    #                  [0, 0, 1],
-    #                  [0, 0, 1],
-    #                 ]
+    
+    self.cp_params = cp_params
     self.cp_list = self.get_contact_points_from_cp_params(self.cp_params)
 
     # Contact model force selection matrix
