@@ -41,9 +41,9 @@ class FixedContactPointSystem:
     # Contact point position parameters
     # 1 finger on face 5, 1 finger on face 3
     self.cp_params = [
-                      [-1, 0, 0],
-                      [1, 0, 0],
                       [0, 1, 0],
+                      [0, -1, 0],
+                      [-1, 0, 0],
                      ]
     #self.cp_params = [
     #                  [0, 0, 1],
@@ -52,13 +52,13 @@ class FixedContactPointSystem:
     self.cp_list = self.get_contact_points_from_cp_params(self.cp_params)
 
     # Contact model force selection matrix
-    l_i = 4
+    l_i = 3
     self.l_i = l_i
     H_i = np.array([
                   [1, 0, 0, 0, 0, 0],
                   [0, 1, 0, 0, 0, 0],
                   [0, 0, 1, 0, 0, 0],
-                  [0, 0, 0, 1, 0, 0],
+                  #[0, 0, 0, 1, 0, 0],
                   ])
     self.H = np.zeros((l_i*self.fnum,self.obj_dof*self.fnum))
     for i in range(self.fnum):
@@ -414,6 +414,32 @@ class FixedContactPointSystem:
     return gapp
 
   """
+  Get 4x4 tranformation matrix from contact point frame to object frame
+  Input:
+  cp: dict with "position" and "orientation" fields in object frame
+  """
+  def get_R_cp_2_o(self, cp):
+    #H = SX.zeros((4,4))
+    
+    quat = cp["orientation"]
+    p = cp["position"]
+    R = utils.get_matrix_from_quaternion(quat)
+
+    return R
+    #H[3,3] = 1
+    #H[0:3,0:3] = R
+    ##H[0:3,3] = p[:]
+    ## Test transformation
+    ##print("calculated: {}".format(H @ np.array([0,0,0,1])))
+    ##print("actual: {}".format(p))
+    #return H
+
+  def get_R_o_2_w(self, x):
+    quat = [x[0,3], x[0,4], x[0,5], x[0,6]]
+    R = utils.get_matrix_from_quaternion(quat)
+    return R
+
+  """
   Get 4x4 tranformation matrix from object frame to world frame
   Input:
   x: object pose [px, py, pz, qw, qx, qy, qz]
@@ -642,7 +668,7 @@ class FixedContactPointSystem:
                          [0, np.inf], # c1 fn force range
                          [-np.inf, np.inf], # c1 ft force range
                          [-np.inf, np.inf], # c1 ft force range
-                         [-np.inf, np.inf], # c1 ft force range
+                         #[-np.inf, np.inf], # c1 ft force range
                          ])
     l_range = np.tile(f1_l_range, (self.fnum, 1))
     l_lb = np.ones(l.shape) * l_range[:,0]
