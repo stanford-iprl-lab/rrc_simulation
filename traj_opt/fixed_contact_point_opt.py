@@ -8,6 +8,7 @@ class FixedContactPointOpt:
   def __init__(self,
                nGrid     = 100,
                dt        = 0.1,
+               cp_params = None,
                x_goal    = None,
                platform  = None,
                obj_pose  = None,
@@ -20,12 +21,13 @@ class FixedContactPointOpt:
     
     # Define system
     self.system = FixedContactPointSystem(
-                                     nGrid = nGrid,
-                                     dt = dt,
-                                     platform = platform,
-                                     obj_pose = obj_pose,
+                                     nGrid     = nGrid,
+                                     dt        = dt,
+                                     cp_params = cp_params,
+                                     platform  = platform,
+                                     obj_pose  = obj_pose,
                                      obj_shape = obj_shape,
-                                     obj_mass = obj_mass,
+                                     obj_mass  = obj_mass,
                                     )
     
     # Test various functions
@@ -68,11 +70,11 @@ class FixedContactPointOpt:
     x0, dx0 = self.system.s_unpack(s0)
     self.get_constraints(self.system,t0,s0,l0)
 
-    print("\nINITIAL TRAJECTORY")
-    print("time: {}".format(t0))
-    print("x: {}".format(x0))
-    print("dx: {}".format(dx0))
-    print("contact forces: {}".format(l0))
+    #print("\nINITIAL TRAJECTORY")
+    #print("time: {}".format(t0))
+    #print("x: {}".format(x0))
+    #print("dx: {}".format(dx0))
+    #print("contact forces: {}".format(l0))
   
     # TODO: path constraints
     x0 = np.array([[0,0,0.0325,1,0,0,0]])
@@ -91,10 +93,10 @@ class FixedContactPointOpt:
     self.l_soln = self.system.l_unpack(l_soln_flat)
 
     # Check that all quaternions are unit quaternions
-    print("Check quaternion magnitudes")
-    for i in range(self.nGrid):
-      quat = self.x_soln[i, 3:]
-      print(np.linalg.norm(quat))
+    #print("Check quaternion magnitudes")
+    #for i in range(self.nGrid):
+    #  quat = self.x_soln[i, 3:]
+    #  print(np.linalg.norm(quat))
   
     # Transform contact forces from contact point frame to world frame
     self.l_wf_soln = np.zeros(self.l_soln.shape)
@@ -120,7 +122,7 @@ class FixedContactPointOpt:
   def cost_func(self,t,s_flat,l_flat,x_goal):
     cost = 0
     R = np.eye(self.system.fnum * self.system.l_i)
-    Q = np.eye(self.system.x_dim) * 10
+    Q = np.eye(self.system.x_dim) * 0.5
 
     l = self.system.l_unpack(l_flat) 
     x,dx = self.system.s_unpack(s_flat)
@@ -152,8 +154,6 @@ class FixedContactPointOpt:
     quat = x[:, 3:]
     new_dquat = new_dx[:, 3:]
 
-    print(ddx)
-
     g = [] # Dynamics constraints
     lbg = [] # Dynamics constraints lower bound
     ubg = [] # Dynamics constraints upper bound
@@ -167,7 +167,7 @@ class FixedContactPointOpt:
       for j in range(3):
         # dx
         f = 0.5 * dt * (new_dpos[i+1,j] + new_dpos[i,j]) + pos[i,j] - pos[i+1,j] 
-        print("new_dx, x, t{}, dim{}: {}".format(i,j,f))
+        #print("new_dx, x, t{}, dim{}: {}".format(i,j,f))
         g.append(f)
         lbg.append(0)
         ubg.append(0)
@@ -178,7 +178,7 @@ class FixedContactPointOpt:
       for j in range(4):
         # dx
         f = quat_i_plus_one_unit[0,j] - quat[i+1, j]
-        print("new_dquat, quat, t{}, dim{}: {}".format(i,j,f))
+        #print("new_dquat, quat, t{}, dim{}: {}".format(i,j,f))
         g.append(f)
         lbg.append(0)
         ubg.append(0)
@@ -187,19 +187,10 @@ class FixedContactPointOpt:
       # iterate over all dofs
       for j in range(system.dx_dim):
         f = 0.5 * dt * (ddx[i+1,j] + ddx[i,j]) + dx[i,j] - dx[i+1,j]
-        print("dx, ddx, t{}, dim{}: {}".format(i,j,f))
+        #print("dx, ddx, t{}, dim{}: {}".format(i,j,f))
         g.append(f)
         lbg.append(0)
         ubg.append(0)
-
-    # Unit quaternion constraints
-    #unit_quat_constraints = system.unit_quat_constraint(s)
-    #for r in range(unit_quat_constraints.shape[0]):
-    #  for c in range(unit_quat_constraints.shape[1]):
-    #    print(unit_quat_constraints[r,c])
-    #    g.append(unit_quat_constraints[r,c])
-    #    lbg.append(-1e-3)
-    #    ubg.append(1e-3)
 
     # Linearized friction cone constraints
     f_constraints = system.friction_cone_constraints(l)
