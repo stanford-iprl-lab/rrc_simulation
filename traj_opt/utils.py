@@ -5,25 +5,36 @@ Multiple 2 quaternions
 return q * n
 """
 def multiply_quaternions(q, n):
-  w = q[0]*n[0] - q[1]*n[1] - q[2]*n[2] - q[3]*n[3]
-  x = q[0]*n[1] + q[1]*n[0] + q[2]*n[3] - q[3]*n[2]
-  y = q[0]*n[2] + q[2]*n[0] + q[3]*n[1] - q[1]*n[3]
-  z = q[0]*n[3] + q[3]*n[0] + q[1]*n[2] - q[2]*n[1]
-  product = [w,x,y,z]
+  qx = q[0]
+  qy = q[1]
+  qz = q[2]
+  qw = q[3]
+
+  nx = n[0]
+  ny = n[1]
+  nz = n[2]
+  nw = n[3]
+  
+  w = qw*nw - qx*nx - qy*ny - qz*nz
+  x = qw*nx + qx*nw + qy*nz - qz*ny
+  y = qw*ny + qy*nw + qz*nx - qx*nz
+  z = qw*nz + qz*nw + qx*ny - qy*nx
+
+  product = [x,y,z,w]
   return product
 
 """
 Get 3x3 rotation matrix from quaternion
 Inputs:
-quat: quaternion [w, x, y, z]
+quat: quaternion [x, y, z, w]
 """
 def get_matrix_from_quaternion(quat):
   R = SX.zeros((3,3))
   
-  w = quat[0]
-  x = quat[1]
-  y = quat[2]
-  z = quat[3]
+  x = quat[0]
+  y = quat[1]
+  z = quat[2]
+  w = quat[3]
   
   R[0,0] = 2 * (w**2 + x**2) - 1
   R[0,1] = 2 * (x*y - w*z)
@@ -43,15 +54,16 @@ def get_matrix_from_quaternion(quat):
 Get inverse transform
 Inputs:
 p: position [x,y,z]
-quat: quaternion [w, x, y, z]
+quat: quaternion [x, y, z, w]
 """
 def invert_transform(p, quat):
   # Invert rotation
-  w = quat[0]
-  x = quat[1]
-  y = quat[2]
-  z = quat[3]
-  quat_inv = [w, -x, -y, -z]
+  x = quat[0]
+  y = quat[1]
+  z = quat[2]
+  w = quat[3]
+
+  quat_inv = [-x, -y, -z, w]
   R_inv = get_matrix_from_quaternion(quat_inv)
   
   # Invert translation

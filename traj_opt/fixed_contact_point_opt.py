@@ -77,7 +77,7 @@ class FixedContactPointOpt:
     #print("contact forces: {}".format(l0))
   
     # TODO: path constraints
-    x0 = np.array([[0,0,0.0325,1,0,0,0]])
+    x0 = np.array([[0,0,0.0325,0,0,0,1]])
     #self.system.get_grasp_matrix(x0)
 
     self.z_lb, self.z_ub = self.system.path_constraints(self.z, x0, dx0=np.zeros((1,6)), dx_end=np.zeros((1,6)))

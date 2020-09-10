@@ -13,13 +13,10 @@ from rrc_simulation import trifinger_platform, sample
 from rrc_simulation.tasks import move_cube
 from fixed_contact_point_opt import FixedContactPointOpt
 
-#x_goal = np.array([[0,0,0,0.707,-0.707,0,0]])
-x_goal = np.array([[0,0,0.1+0.0325,1,0,0,0]])
-#x_goal = np.array([[0.15,0,0.0325,1,0,0,0]])
-#x_goal = np.array([[0,0,0.2,1,0,0,0]])
+x_goal = np.array([[0,0,0.1+0.0325,0,0,0,1]])
 x_goal_str = "-".join(map(str,x_goal[0,:].tolist()))
 
-nGrid = 10
+nGrid = 100
 dt = 0.1
 
 # Contact point position parameters
@@ -59,10 +56,6 @@ def main():
     args = parser.parse_args()
 
     #Tester Initial ObjectPose
-    initial_object_pose = move_cube.Pose(
-                position=np.array([0, 0, 0.0325]),
-                orientation=np.array([0.707, 0, 0, 0.707]),
-            )
     initial_object_pose = None
 
     platform = trifinger_platform.TriFingerPlatform(
