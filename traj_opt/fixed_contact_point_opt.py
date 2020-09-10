@@ -75,7 +75,7 @@ class FixedContactPointOpt:
     print("contact forces: {}".format(l0))
   
     # TODO: path constraints
-    x0 = np.array([[0,0,0,1,0,0,0]])
+    x0 = np.array([[0,0,0.0325,1,0,0,0]])
     #self.system.get_grasp_matrix(x0)
 
     self.z_lb, self.z_ub = self.system.path_constraints(self.z, x0, dx0=np.zeros((1,6)), dx_end=np.zeros((1,6)))
@@ -90,16 +90,22 @@ class FixedContactPointOpt:
     self.x_soln, self.dx_soln = self.system.s_unpack(self.s_soln)
     self.l_soln = self.system.l_unpack(l_soln_flat)
 
-    print(self.x_soln)
-    print(self.dx_soln)
-    print(self.l_soln)
-
     # Check that all quaternions are unit quaternions
     print("Check quaternion magnitudes")
     for i in range(self.nGrid):
       quat = self.x_soln[i, 3:]
       print(np.linalg.norm(quat))
-   
+  
+    # Transform contact forces from contact point frame to world frame
+    self.l_wf_soln = np.zeros(self.l_soln.shape)
+    for t_i in range(self.l_soln.shape[0]):
+      for f_i in range(self.system.fnum):
+        l_of = self.system.get_R_cp_2_o(self.system.cp_list[f_i]) @ (self.l_soln[t_i, f_i*self.system.l_i:f_i*self.system.l_i + self.system.l_i]).T
+        l_wf = self.system.get_R_o_2_w(self.x_soln[t_i, :]) @ l_of
+
+        for d in range(self.system.l_i):
+          self.l_wf_soln[t_i, f_i*self.system.l_i + d] = l_wf[:, 0].elements()[d].__float__()
+
     # Final distance to goal
     #eef_final = self.system.get_eef_pos_world(self.q_soln)[-1, 0:2]
     #self.final_dist = norm_2(eef_final - eef_goal)
@@ -108,14 +114,13 @@ class FixedContactPointOpt:
     statistics = self.solver.stats()
     self.total_time_sec = statistics["t_wall_total"]
 
-
   """
   Computes cost
   """
   def cost_func(self,t,s_flat,l_flat,x_goal):
     cost = 0
     R = np.eye(self.system.fnum * self.system.l_i)
-    Q = np.eye(self.system.x_dim) * 3
+    Q = np.eye(self.system.x_dim) * 10
 
     l = self.system.l_unpack(l_flat) 
     x,dx = self.system.s_unpack(s_flat)
