@@ -44,15 +44,6 @@ class CustomPinocchioUtils(PinocchioUtils):
     #print(self.data.oMf[frame_id].rotation)
     return Ji
 
-  def get_hand_jacobian(self, q):
-    """
-    Get full Jacobian of the TriFinger hand
-    """
-    J = 0
-    for finger_id in range(3):
-      J += self.get_tip_link_jacobian(finger_id, q)
-    return J 
-
   def inverse_kinematics(self, fid, xdes, q0):
     """
     Method not in use right now, but is here with the intention
