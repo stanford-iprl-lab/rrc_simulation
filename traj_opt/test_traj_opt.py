@@ -13,13 +13,34 @@ from rrc_simulation import trifinger_platform, sample
 from rrc_simulation.tasks import move_cube
 from fixed_contact_point_opt import FixedContactPointOpt
 
+#x_goal = np.array([[0,0,0,0.707,-0.707,0,0]])
+x_goal = np.array([[0,0,0.1+0.0325,1,0,0,0]])
+#x_goal = np.array([[0.15,0,0.0325,1,0,0,0]])
+#x_goal = np.array([[0,0,0.2,1,0,0,0]])
+x_goal_str = "-".join(map(str,x_goal[0,:].tolist()))
+
+nGrid = 10
+dt = 0.1
+
+# Contact point position parameters
+# 1 finger on face 5, 1 finger on face 3
+cp_params = [
+             [0, 1, 0],
+             [0, -1, 0],
+             [-1, 0, 0],
+            ]
+#cp_params = [
+#             [0, 0, 1],
+#             [0, 0, 1],
+#            ]
+
 # Files to save solutions
 today_date = date.today().strftime("%m-%d-%y")
 save_dir = "./logs/{}".format(today_date)
 # Create directory if it does not exist
 if not os.path.exists(save_dir):
   os.makedirs(save_dir)
-save_string = "{}/fixed_cp_object".format(save_dir)
+save_string = "{}/fixed_cp_object_xgoal_{}_nGrid_{}_dt_{}".format(save_dir, x_goal_str, nGrid, dt) 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -64,20 +85,17 @@ def main():
     cube_shape = (move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH)
     cube_mass = 0.02
 
-    #x_goal = np.array([[0,0,0,0.707,-0.707,0,0]])
-    x_goal = np.array([[0,0,0.1+0.0325,1,0,0,0]])
-    #x_goal = np.array([[0.15,0,0.0325,1,0,0,0]])
-    #x_goal = np.array([[0,0,0.2,1,0,0,0]])
-    
+    # Formulate and solve optimization problem
     opt_problem = FixedContactPointOpt(
-                                     nGrid = 10, # Number of timesteps
-                                     dt = 0.1,   # Length of each timestep (seconds)
-                                     x_goal = x_goal,
-                                     platform = platform,
-                                     obj_pose = cube_pose,
-                                     obj_shape = cube_shape,
-                                     obj_mass = cube_mass,
-                                    )
+                                      nGrid     = nGrid, # Number of timesteps
+                                      dt        = dt,   # Length of each timestep (seconds)
+                                      cp_params = cp_params,
+                                      x_goal    = x_goal,
+                                      platform  = platform,
+                                      obj_pose  = cube_pose,
+                                      obj_shape = cube_shape,
+                                      obj_mass  = cube_mass,
+                                      )
     
     # Save solution in npz file
     np.savez(save_string,
@@ -87,8 +105,8 @@ def main():
              x          = opt_problem.x_soln,
              dx         = opt_problem.dx_soln,
              l          = opt_problem.l_soln,
-             l_wf       = opt_problem.l_soln,
-             #c          = c_init,
+             l_wf       = opt_problem.l_wf_soln,
+             cp_params  = np.array(cp_params),
              obj_shape  = cube_shape,
              obj_mass   = cube_mass,
              fnum       = opt_problem.system.fnum, 
