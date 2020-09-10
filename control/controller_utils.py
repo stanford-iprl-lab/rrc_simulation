@@ -18,13 +18,14 @@ def impedance_controller(
                         tip_forces_wf = None
                         ):
   torque = 0
+  goal_reached = True
   for finger_id in range(3):
     # Get contact forces for single finger
     if tip_forces_wf is None:
       f_wf = None
     else:
       f_wf = np.expand_dims(np.array(tip_forces_wf[finger_id * 3:finger_id*3 + 3]),1)
-    torque += impedance_controller_single_finger(
+    finger_torque, finger_goal_reached = impedance_controller_single_finger(
                                                 finger_id,
                                                 tip_pos_desired_list[finger_id],
                                                 q_current,
@@ -32,7 +33,9 @@ def impedance_controller(
                                                 custom_pinocchio_utils,
                                                 tip_force_wf = f_wf,
                                                 )
-  return torque
+    goal_reached = goal_reached and finger_goal_reached
+    torque += finger_torque
+  return torque, goal_reached
 
 """
 Compute joint torques to move fingertip to desired location
@@ -79,8 +82,13 @@ def impedance_controller_single_finger(
     torque = np.squeeze(Ji.T @ (Kp @ delta_x - Kv @ dx_current) + Ji.T @ tip_force_wf)
   else:
     torque = np.squeeze(Ji.T @ (Kp @ delta_x - Kv @ dx_current))
-
-  return torque
+  
+  tol = 0.008
+  goal_reached = (np.linalg.norm(delta_x) < tol)
+  #print("Finger {} delta".format(finger_id))
+  #print(np.linalg.norm(delta_x))
+  #print(goal_reached)
+  return torque, goal_reached
 
 """
 Compute contact point position in world frame
