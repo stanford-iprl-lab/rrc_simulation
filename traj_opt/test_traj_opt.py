@@ -70,8 +70,8 @@ def main():
     #x_goal = np.array([[0,0,0.2,1,0,0,0]])
     
     opt_problem = FixedContactPointOpt(
-                                     nGrid = 10,
-                                     dt = 0.1,
+                                     nGrid = 10, # Number of timesteps
+                                     dt = 0.1,   # Length of each timestep (seconds)
                                      x_goal = x_goal,
                                      platform = platform,
                                      obj_pose = cube_pose,
