@@ -17,7 +17,7 @@ from rrc_simulation.gym_wrapper.utils import configurable
 
 MAX_DIST = move_cube._max_cube_com_distance_to_center
 DIST_THRESH = move_cube._CUBE_WIDTH / 5
-REW_BONUS = 1
+REW_BONUS = 0.5
 
 
 @configurable(pickleable=True)
@@ -442,13 +442,13 @@ class FlattenGoalWrapper(gym.ObservationWrapper):
 class DistRewardWrapper(gym.RewardWrapper):
     def __init__(self, env, target_dist=0.2, dist_coef=1., 
                  final_step_only=True, augment_reward=True,
-                 rew_f='lin'):
+                 rew_fn='lin'):
         super(DistRewardWrapper, self).__init__(env)
         self._target_dist = target_dist  # 0.156
         self._dist_coef = dist_coef
         self.final_step_only = final_step_only
         self.augment_reward = augment_reward
-        self.rew_f = rew_f
+        self.rew_fn = rew_fn
 
     @property
     def target_dist(self):
@@ -470,9 +470,9 @@ class DistRewardWrapper(gym.RewardWrapper):
 
     def reward(self, reward):
         final_dist = self.compute_goal_dist(self.info)
-        if self.rew_f == 'lin':
+        if self.rew_fn == 'lin':
             rew = self._dist_coef * (1 - final_dist/self.target_dist)
-        elif self.rew_f == 'exp':
+        elif self.rew_fn == 'exp':
             rew = self._dist_coef * np.exp(-final_dist/self.target_dist)
         if self.augment_reward:
             rew += reward
