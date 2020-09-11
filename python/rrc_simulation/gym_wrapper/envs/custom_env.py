@@ -60,7 +60,7 @@ class CurriculumInitializer:
         self.episode_dist = np.roll(self.episode_dist, 1)
         final_dist = np.linalg.norm(goal_pose.position - final_pose.position)
         self.episode_dist[0] = final_dist
-        if self._current_level == self.num_levels:
+        if self._current_level == self.num_levels - 1:
             sample_radius = 0
         else:
             sample_radius = self.levels[self.current_level]
@@ -81,7 +81,7 @@ class CurriculumInitializer:
 
     @property
     def goal_sample_radius(self):
-        if self._current_level >= self.num_levels:
+        if self._current_level == self.num_levels:
             sample_radius_min = 0.
         else:
             sample_radius_min = self.levels[self.current_level]
@@ -440,12 +440,15 @@ class FlattenGoalWrapper(gym.ObservationWrapper):
 
 
 class DistRewardWrapper(gym.RewardWrapper):
-    def __init__(self, env, target_dist=0.156, dist_coef=2., 
-                 final_step_only=True):
+    def __init__(self, env, target_dist=0.2, dist_coef=1., 
+                 final_step_only=True, augment_reward=True,
+                 rew_f='lin'):
         super(DistRewardWrapper, self).__init__(env)
         self._target_dist = target_dist  # 0.156
         self._dist_coef = dist_coef
         self.final_step_only = final_step_only
+        self.augment_reward = augment_reward
+        self.rew_f = rew_f
 
     @property
     def target_dist(self):
@@ -467,7 +470,13 @@ class DistRewardWrapper(gym.RewardWrapper):
 
     def reward(self, reward):
         final_dist = self.compute_goal_dist(self.info)
-        return reward + self._dist_coef * (1 - final_dist/self.target_dist)
+        if self.rew_f == 'lin':
+            rew = self._dist_coef * (1 - final_dist/self.target_dist)
+        elif self.rew_f == 'exp':
+            rew = self._dist_coef * np.exp(-final_dist/self.target_dist)
+        if self.augment_reward:
+            rew += reward
+        return rew
 
     def compute_goal_dist(self, info):
         goal_pose = self.unwrapped.goal 
