@@ -10,6 +10,7 @@ class FixedContactPointSystem:
   def __init__(self,
                nGrid     = 100,
                dt        = 0.1,
+               cp_params = None,
                platform  = None,
                obj_pose  = None,
                obj_shape = None,
@@ -37,28 +38,18 @@ class FixedContactPointSystem:
     self.obj_mu = 1
 
     self.gravity = -10
-
-    # Contact point position parameters
-    # 1 finger on face 5, 1 finger on face 3
-    self.cp_params = [
-                      [-1, 0, 0],
-                      [1, 0, 0],
-                      [0, 1, 0],
-                     ]
-    #self.cp_params = [
-    #                  [0, 0, 1],
-    #                  [0, 0, 1],
-    #                 ]
+    
+    self.cp_params = cp_params
     self.cp_list = self.get_contact_points_from_cp_params(self.cp_params)
 
     # Contact model force selection matrix
-    l_i = 4
+    l_i = 3
     self.l_i = l_i
     H_i = np.array([
                   [1, 0, 0, 0, 0, 0],
                   [0, 1, 0, 0, 0, 0],
                   [0, 0, 1, 0, 0, 0],
-                  [0, 0, 0, 1, 0, 0],
+                  #[0, 0, 0, 1, 0, 0],
                   ])
     self.H = np.zeros((l_i*self.fnum,self.obj_dof*self.fnum))
     for i in range(self.fnum):
@@ -161,8 +152,8 @@ class FixedContactPointSystem:
   """
   Pack the state vector s into a single horizontal vector
   State:
-  x: (px, py, pz, qw, qx, qy, qz) pose of object
-  dx: d(px, py, pz, qw, qx, qy, qz) velocity of object
+  x: (px, py, pz, qx, qy, qz, qw) pose of object
+  dx: d(px, py, pz, qx, qy, qz, qw) velocity of object
   """
   def s_pack(self,x,dx):
     nGrid = self.nGrid
@@ -255,13 +246,13 @@ class FixedContactPointSystem:
   """
   Get matrix to transform angular velocity to quaternion time derivative
   Input:
-    quat: [qw, qx, qy, qz]
+    quat: [qx, qy, qz, qw]
   """
   def get_dx_to_dquat_matrix(self, quat):
-    qw = quat[0]
-    qx = quat[1]
-    qy = quat[2]
-    qz = quat[3]
+    qx = quat[0]
+    qy = quat[1]
+    qz = quat[2]
+    qw = quat[3]
 
     M = np.array([
                   [-qx, -qy, -qz],
@@ -305,28 +296,6 @@ class FixedContactPointSystem:
     #quit()
     return f_constraints
 
-  """
-  Constrain quaternions to be unit quaternions
-  Not used
-  """
-  def unit_quat_constraint(self, s_flat):
-    # Unpack variables
-    x, dx  = self.s_unpack(s_flat)
-
-    constraint_list = []
-
-    for t_ind in range(self.nGrid):
-      x_i = x[t_ind, :]
-      quat_i = x_i[0, 3:]
-      qw = quat_i[0]
-      qx = quat_i[1]
-      qy = quat_i[2]
-      qz = quat_i[3]
-      f = qw**2 + qx**2 + qy**2 + qz**2 - 1
-      constraint_list.append(f)
-    constraints = vertcat(*constraint_list)
-    return constraints
-
 ################################################################################
 # End of constraint functions
 ################################################################################
@@ -357,9 +326,7 @@ class FixedContactPointSystem:
   """
   def get_grasp_matrix(self, x):
     # Transformation matrix from object frame to world frame
-    quat_o_2_w = [x[0,3], x[0,4], x[0,5], x[0,6]]
-    H_o_2_w = self.get_H_o_2_w(x)
-    #print("H_o_2_w: {}".format(H_o_2_w))
+    quat_o_2_w = [x[0,4], x[0,5], x[0,6], x[0,3]]
 
     G_list = []
 
@@ -414,6 +381,32 @@ class FixedContactPointSystem:
     return gapp
 
   """
+  Get 4x4 tranformation matrix from contact point frame to object frame
+  Input:
+  cp: dict with "position" and "orientation" fields in object frame
+  """
+  def get_R_cp_2_o(self, cp):
+    #H = SX.zeros((4,4))
+    
+    quat = cp["orientation"]
+    p = cp["position"]
+    R = utils.get_matrix_from_quaternion(quat)
+
+    return R
+    #H[3,3] = 1
+    #H[0:3,0:3] = R
+    ##H[0:3,3] = p[:]
+    ## Test transformation
+    ##print("calculated: {}".format(H @ np.array([0,0,0,1])))
+    ##print("actual: {}".format(p))
+    #return H
+
+  def get_R_o_2_w(self, x):
+    quat = [x[0,4], x[0,5], x[0,6], x[0,3]]
+    R = utils.get_matrix_from_quaternion(quat)
+    return R
+
+  """
   Get 4x4 tranformation matrix from object frame to world frame
   Input:
   x: object pose [px, py, pz, qw, qx, qy, qz]
@@ -421,7 +414,7 @@ class FixedContactPointSystem:
   def get_H_o_2_w(self, x):
     H = SX.zeros((4,4))
     
-    quat = [x[0,3], x[0,4], x[0,5], x[0,6]]
+    quat = [x[0,4], x[0,5], x[0,6], x[0,3]]
     R = utils.get_matrix_from_quaternion(quat)
     p = np.array([x[0,0], x[0,1], x[0,2]])
 
@@ -438,7 +431,7 @@ class FixedContactPointSystem:
   """
   def get_H_w_2_o(self, x):
     H = np.zeros((4,4))
-    quat = [x[0,3], x[0,4], x[0,5], x[0,6]]
+    quat = [x[0,4], x[0,5], x[0,6], x[0,3]]
     p = np.array([x[0,0], x[0,1], x[0,2]])
     p_inv, quat_inv = utils.invert_transform(p, quat)
     R = utils.get_matrix_from_quaternion(quat_inv)
@@ -510,17 +503,17 @@ class FixedContactPointSystem:
     z_param = cp_param[2]
     # For now, just hard code quat
     if y_param == -1:
-      quat = (np.sqrt(2)/2, 0, 0, np.sqrt(2)/2)
+      quat = (0, 0, np.sqrt(2)/2, np.sqrt(2)/2)
     elif y_param == 1:
-      quat = (np.sqrt(2)/2, 0, 0, -np.sqrt(2)/2)
+      quat = (0, 0, -np.sqrt(2)/2, np.sqrt(2)/2)
     elif x_param == 1:
-      quat = (0, 0, 1, 0)
+      quat = (0, 1, 0, 0)
     elif z_param == 1:
-      quat = (np.sqrt(2)/2, 0, np.sqrt(2)/2, 0)
+      quat = (0, np.sqrt(2)/2, 0, np.sqrt(2)/2)
     elif x_param == -1:
-      quat = (1, 0, 0, 0)
+      quat = (0, 0, 0, 1)
     elif z_param == -1:
-      quat = (np.sqrt(2)/2, 0, -np.sqrt(2)/2, 0)
+      quat = (0, -np.sqrt(2)/2, 0, np.sqrt(2)/2)
 
     return cp_of, quat
 
@@ -642,7 +635,7 @@ class FixedContactPointSystem:
                          [0, np.inf], # c1 fn force range
                          [-np.inf, np.inf], # c1 ft force range
                          [-np.inf, np.inf], # c1 ft force range
-                         [-np.inf, np.inf], # c1 ft force range
+                         #[-np.inf, np.inf], # c1 ft force range
                          ])
     l_range = np.tile(f1_l_range, (self.fnum, 1))
     l_lb = np.ones(l.shape) * l_range[:,0]
@@ -677,7 +670,7 @@ class FixedContactPointSystem:
 
     s_traj = np.zeros(s_var.shape)
     x_traj, dx_traj = self.s_unpack(s_traj)
-    x_traj[:,3] = 1
+    x_traj[:,6] = 1
     s_traj = self.s_pack(x_traj, dx_traj)
     
     l_traj = np.zeros(self.l_unpack(l_var).shape)
