@@ -140,6 +140,16 @@ def get_cp_of_from_cp_param(cp_param, cube_half_size):
   cp = ContactPoint(cp_of, quat)
   return cp
 
+def get_wf_from_of(p, obj_pose):
+  cube_pos_wf = obj_pose.position
+  cube_quat_wf = obj_pose.orientation
+
+  rotation = Rotation.from_quat(cube_quat_wf)
+  translation = np.asarray(cube_pos_wf)
+  
+  return rotation.apply(p) + translation
+
+
 def get_of_from_wf(p, obj_pose):
   cube_pos_wf = obj_pose.position
   cube_quat_wf = obj_pose.orientation
@@ -157,13 +167,12 @@ Get initial contact points on cube
 Assign closest cube face to each finger
 For now, don't worry about z-axis, just care about xy plane
 """
-def get_initial_cp_params(obj_pose, cube_half_size, fingertip_pos_list):
+def get_initial_cp_params(obj_pose, fingertip_pos_list):
   # Transform finger tip positions to object frame
-
-  fingertip_pos_list_wf = []
-  for f_of in fingertip_pos_list:
-    f_wf = get_of_from_wf(f_of, obj_pose)
-    fingertip_pos_list_wf.append(f_wf)
+  fingertip_pos_list_of = []
+  for f_wf in fingertip_pos_list:
+    f_of = get_of_from_wf(f_wf, obj_pose)
+    fingertip_pos_list_of.append(f_of)
 
   # Find distance from x axis and y axis, and store in xy_distances
   # Need some additional logic to prevent multiple fingers from being assigned to same face
@@ -171,9 +180,9 @@ def get_initial_cp_params(obj_pose, cube_half_size, fingertip_pos_list):
   y_axis = np.array([0,1])
 
   xy_distances = np.zeros((3, 2)) # Row corresponds to a finger, columns are x and y axis distances
-  for f_i, f_wf in enumerate(fingertip_pos_list_wf):
-    x_dist = get_distance_from_pt_2_line(x_axis, np.array([0,0]), f_wf[0,0:2])
-    y_dist = get_distance_from_pt_2_line(y_axis, np.array([0,0]), f_wf[0,0:2])
+  for f_i, f_of in enumerate(fingertip_pos_list_of):
+    x_dist = get_distance_from_pt_2_line(x_axis, np.array([0,0]), f_of[0,0:2])
+    y_dist = get_distance_from_pt_2_line(y_axis, np.array([0,0]), f_of[0,0:2])
     
     xy_distances[f_i, 0] = x_dist
     xy_distances[f_i, 1] = y_dist
@@ -191,12 +200,12 @@ def get_initial_cp_params(obj_pose, cube_half_size, fingertip_pos_list):
     x_dist = xy_distances[curr_finger_id, 0]
     y_dist = xy_distances[curr_finger_id, 1]
     if furthest_axis == 0: # distance to x axis is greater than to y axis
-      if fingertip_pos_list_wf[curr_finger_id][0, 1] > 0:
+      if fingertip_pos_list_of[curr_finger_id][0, 1] > 0:
         face = 2
       else:
         face = 1
     else:
-      if fingertip_pos_list_wf[curr_finger_id][0, 0] > 0:
+      if fingertip_pos_list_of[curr_finger_id][0, 0] > 0:
         face = 3
       else:
         face = 5
@@ -205,12 +214,12 @@ def get_initial_cp_params(obj_pose, cube_half_size, fingertip_pos_list):
     if face not in free_faces:
       alternate_axis = abs(furthest_axis - 1)
       if furthest_axis == 0: # distance to x axis is greater than to y axis
-        if fingertip_pos_list_wf[curr_finger_id][0, 1] > 0:
+        if fingertip_pos_list_of[curr_finger_id][0, 1] > 0:
           face = 2
         else:
           face = 1
       else:
-        if fingertip_pos_list_wf[curr_finger_id][0, 0] > 0:
+        if fingertip_pos_list_of[curr_finger_id][0, 0] > 0:
           face = 3
         else:
           face = 5
@@ -240,7 +249,9 @@ def get_initial_cp_params(obj_pose, cube_half_size, fingertip_pos_list):
       param = [-1, 0, 0]
     cp_params.append(param)
 
+  print(assigned_faces)
   return cp_params
+
 """
 Get distance from point to line (in 2D)
 Inputs:
@@ -258,3 +269,51 @@ def get_distance_from_pt_2_line(a, b, p):
   d = ap - c
   
   return np.sqrt(np.dot(d,d))
+
+"""
+Get waypoints to initial contact point on object
+For now, we assume that contact points are always in the center of cube face
+Return waypoints in world frame
+Inputs:
+cp_param: target contact point param
+fingertip_pos: fingertip start position in world frame
+"""
+def get_waypoints_to_cp_param(obj_pose, cube_half_size, fingertip_pos, cp_param):
+  # Transform finger tip positions to object frame
+  fingertip_pos_of = np.squeeze(get_of_from_wf(fingertip_pos, obj_pose))
+  
+  # Transform cp_param to object frame
+  cp = get_cp_of_from_cp_param(cp_param, cube_half_size)
+  cp_pos_of = cp.pos_of
+
+  waypoints = []
+  tol = 0.05
+
+  # Get the non-zero cp_param dimension (to determine which face the contact point is on)
+  # This works because we assume z is always 0, and either x or y is 0
+  non_zero_dim = np.argmax(abs(cp_param))
+  zero_dim = abs(1-non_zero_dim)
+
+  print(fingertip_pos_of)
+
+  # Work with absolute values, and then correct sign at the end
+  w = np.expand_dims(fingertip_pos_of,0)
+  if abs(fingertip_pos_of[non_zero_dim]) < abs(cp_pos_of[non_zero_dim] + tol):
+    w[0,non_zero_dim] = cp_param[non_zero_dim] * (abs(cp_pos_of[non_zero_dim]) + tol) # fix sign
+    waypoints.append(w.copy())
+
+  # Align zero_dim 
+  w[0,zero_dim] = 0
+  waypoints.append(w.copy())
+
+  w[0,non_zero_dim] = cp_pos_of[non_zero_dim]
+  w[0,2] = 0
+  waypoints.append(w.copy())
+
+  # Transform waypoints from object frame to world frame
+  waypoints_wf = []
+  for wp in waypoints:
+    waypoints_wf.append(get_wf_from_of(wp, obj_pose))
+  
+  return waypoints_wf
+
