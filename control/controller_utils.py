@@ -2,6 +2,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from contact_point import ContactPoint
+from rrc_simulation.tasks import move_cube
 
 """
 Compute joint torques to move fingertips to desired locations
@@ -139,3 +140,121 @@ def get_cp_of_from_cp_param(cp_param, cube_half_size):
   cp = ContactPoint(cp_of, quat)
   return cp
 
+def get_of_from_wf(p, obj_pose):
+  cube_pos_wf = obj_pose.position
+  cube_quat_wf = obj_pose.orientation
+
+  rotation = Rotation.from_quat(cube_quat_wf)
+  translation = np.asarray(cube_pos_wf)
+  
+  rotation_inv = rotation.inv()
+  translation_inv = -rotation_inv.apply(translation)
+
+  return rotation_inv.apply(p) + translation_inv
+
+"""
+Get initial contact points on cube
+Assign closest cube face to each finger
+For now, don't worry about z-axis, just care about xy plane
+"""
+def get_initial_cp_params(obj_pose, cube_half_size, fingertip_pos_list):
+  # Transform finger tip positions to object frame
+
+  fingertip_pos_list_wf = []
+  for f_of in fingertip_pos_list:
+    f_wf = get_of_from_wf(f_of, obj_pose)
+    fingertip_pos_list_wf.append(f_wf)
+
+  # Find distance from x axis and y axis, and store in xy_distances
+  # Need some additional logic to prevent multiple fingers from being assigned to same face
+  x_axis = np.array([1,0])
+  y_axis = np.array([0,1])
+
+  xy_distances = np.zeros((3, 2)) # Row corresponds to a finger, columns are x and y axis distances
+  for f_i, f_wf in enumerate(fingertip_pos_list_wf):
+    x_dist = get_distance_from_pt_2_line(x_axis, np.array([0,0]), f_wf[0,0:2])
+    y_dist = get_distance_from_pt_2_line(y_axis, np.array([0,0]), f_wf[0,0:2])
+    
+    xy_distances[f_i, 0] = x_dist
+    xy_distances[f_i, 1] = y_dist
+
+  # Do the face assignment - greedy approach (assigned closest fingers first)
+  free_faces = [1,2,3,5] # List of face ids that haven't been assigned yet
+  assigned_faces = np.zeros(3) 
+  for i in range(3):
+    # Find indices max element in array
+    max_ind = np.unravel_index(np.argmax(xy_distances), xy_distances.shape)
+    curr_finger_id = max_ind[0] 
+    furthest_axis = max_ind[1]
+
+    # Do the assignment
+    x_dist = xy_distances[curr_finger_id, 0]
+    y_dist = xy_distances[curr_finger_id, 1]
+    if furthest_axis == 0: # distance to x axis is greater than to y axis
+      if fingertip_pos_list_wf[curr_finger_id][0, 1] > 0:
+        face = 2
+      else:
+        face = 1
+    else:
+      if fingertip_pos_list_wf[curr_finger_id][0, 0] > 0:
+        face = 3
+      else:
+        face = 5
+
+    # Handle faces that may already be assigned
+    if face not in free_faces:
+      alternate_axis = abs(furthest_axis - 1)
+      if furthest_axis == 0: # distance to x axis is greater than to y axis
+        if fingertip_pos_list_wf[curr_finger_id][0, 1] > 0:
+          face = 2
+        else:
+          face = 1
+      else:
+        if fingertip_pos_list_wf[curr_finger_id][0, 0] > 0:
+          face = 3
+        else:
+          face = 5
+    
+    # If backup face isn't free, assign random face from free_faces
+    if face not in free_faces:
+      face = free_faces[0] 
+
+    assigned_faces[curr_finger_id] = face 
+
+    # Replace row with -np.inf so we can assign other fingers
+    xy_distances[curr_finger_id, :] = -np.inf
+    # Remove face from free_faces
+    free_faces.remove(face)
+
+  # Set contact point params
+  cp_params = []
+  for i in range(3):
+    face = assigned_faces[i]
+    if face == 1:
+      param = [0, -1, 0]
+    elif face == 2:
+      param = [0, 1, 0]
+    elif face == 3:
+      param = [1, 0, 0]
+    elif face == 5:
+      param = [-1, 0, 0]
+    cp_params.append(param)
+
+  return cp_params
+"""
+Get distance from point to line (in 2D)
+Inputs:
+a, b: points on line
+p: standalone point, for which we want to compute its distance to line
+"""
+def get_distance_from_pt_2_line(a, b, p):
+  a = np.squeeze(a)
+  b = np.squeeze(b)
+  p = np.squeeze(p)
+
+  ba = b - a
+  ap = a - p
+  c = ba * (np.dot(ap,ba) / np.dot(ba,ba))
+  d = ap - c
+  
+  return np.sqrt(np.dot(d,d))
