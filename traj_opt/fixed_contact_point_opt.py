@@ -9,9 +9,8 @@ class FixedContactPointOpt:
                nGrid     = 100,
                dt        = 0.1,
                cp_params = None,
+               x0        = np.array([[0,0,0.0325,0,0,0,1]]),
                x_goal    = None,
-               platform  = None,
-               obj_pose  = None,
                obj_shape = None,
                obj_mass  = None,
                ):
@@ -24,8 +23,6 @@ class FixedContactPointOpt:
                                      nGrid     = nGrid,
                                      dt        = dt,
                                      cp_params = cp_params,
-                                     platform  = platform,
-                                     obj_pose  = obj_pose,
                                      obj_shape = obj_shape,
                                      obj_mass  = obj_mass,
                                     )
@@ -57,7 +54,6 @@ class FixedContactPointOpt:
     #options = {"ipopt.print_level":5}
     options = {"ipopt.max_iter":10000,
                 "ipopt.tol": 1e-4,
-                "ipopt.mu_init": 0.5
               }
     #options = {"iteration_callback": MyCallback('callback',self.z.shape[0],self.g.shape[0],self.system)}
     #options["monitor"] = ["nlp_g"]
@@ -66,9 +62,9 @@ class FixedContactPointOpt:
 
     # TODO: intial guess
     self.z0 = self.system.get_initial_guess(self.z)
-    t0, s0, l0 = self.system.decvar_unpack(self.z0)
-    x0, dx0 = self.system.s_unpack(s0)
-    self.get_constraints(self.system,t0,s0,l0)
+    #t0, s0, l0 = self.system.decvar_unpack(self.z0)
+    #x0, dx0 = self.system.s_unpack(s0)
+    #self.get_constraints(self.system,t0,s0,l0)
 
     #print("\nINITIAL TRAJECTORY")
     #print("time: {}".format(t0))
@@ -77,7 +73,6 @@ class FixedContactPointOpt:
     #print("contact forces: {}".format(l0))
   
     # TODO: path constraints
-    x0 = np.array([[0,0,0.0325,0,0,0,1]])
     #self.system.get_grasp_matrix(x0)
 
     self.z_lb, self.z_ub = self.system.path_constraints(self.z, x0, dx0=np.zeros((1,6)), dx_end=np.zeros((1,6)))
@@ -102,12 +97,15 @@ class FixedContactPointOpt:
     self.l_wf_soln = np.zeros(self.l_soln.shape)
     for t_i in range(self.l_soln.shape[0]):
       for f_i in range(self.system.fnum):
+        #print(self.l_soln[t_i, :])
+        #print("FINGER {}".format(f_i))
         l_of = self.system.get_R_cp_2_o(self.system.cp_list[f_i]) @ (self.l_soln[t_i, f_i*self.system.l_i:f_i*self.system.l_i + self.system.l_i]).T
+        #print(l_of)
         l_wf = self.system.get_R_o_2_w(self.x_soln[t_i, :]) @ l_of
+        #print(l_wf)
 
         for d in range(self.system.l_i):
           self.l_wf_soln[t_i, f_i*self.system.l_i + d] = l_wf[:, 0].elements()[d].__float__()
-
     # Final distance to goal
     #eef_final = self.system.get_eef_pos_world(self.q_soln)[-1, 0:2]
     #self.final_dist = norm_2(eef_final - eef_goal)
@@ -122,14 +120,20 @@ class FixedContactPointOpt:
   def cost_func(self,t,s_flat,l_flat,x_goal):
     cost = 0
     R = np.eye(self.system.fnum * self.system.l_i)
-    Q = np.eye(self.system.x_dim) * 0.5
+    Q = np.eye(self.system.x_dim) * 1
 
     l = self.system.l_unpack(l_flat) 
     x,dx = self.system.s_unpack(s_flat)
 
+    n = 0
+    target_normal_forces = np.zeros(l[0,:].shape)
+    target_normal_forces[0,0] = n
+    target_normal_forces[0,3] = n
+    target_normal_forces[0,6] = n
+
     # Contact forces
     for i in range(t.shape[0]):
-      cost += 0.5 * l[i,:] @ R @ l[i,:].T
+      cost += 0.5 * (l[i,:] - target_normal_forces) @ R @ (l[i,:] - target_normal_forces).T
   
     for i in range(t.shape[0]):
       # Add the current distance to goal
