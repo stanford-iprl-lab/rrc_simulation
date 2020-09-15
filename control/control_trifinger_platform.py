@@ -66,8 +66,8 @@ episode_length = move_cube.episode_length
 
 def main():
 
-  save_dir, fingertip_pos_list, x_pos_list, x_quat_list = run_episode()
-  plot_state(save_dir, fingertip_pos_list, x_pos_list, x_quat_list)
+  save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal = run_episode()
+  plot_state(save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal)
 
 """
 Run episode
@@ -190,7 +190,7 @@ def run_episode():
                                                           cube_half_size)
       # Get target contact forces in world frame 
       tip_forces_wf = l_wf_soln[traj_waypoint_i, :]
-      tol = 0.008
+      tol = 0.007
     
     finger_waypoints.set_state(fingertip_goal_list)
 
@@ -208,6 +208,7 @@ def run_episode():
       if pre_traj_waypoint_i < len(finger_waypoints_list[0]):
         pre_traj_waypoint_i += 1
       elif traj_waypoint_i < nGrid:
+        print("trajectory waypoint: {}".format(traj_waypoint_i))
         traj_waypoint_i += 1
 
     # Save current state for plotting
@@ -227,12 +228,12 @@ def run_episode():
 
     #time.sleep(platform.get_time_step())
 
-  return save_dir, fingertip_pos_list, x_pos_list, x_quat_list
+  return save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal
   
 """
 PLOTTING
 """
-def plot_state(save_dir, fingertip_pos_list, x_pos_list, x_quat_list):
+def plot_state(save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal):
   total_timesteps = episode_length
 
   # Plot end effector trajectory
@@ -257,12 +258,23 @@ def plot_state(save_dir, fingertip_pos_list, x_pos_list, x_quat_list):
     plt.savefig("{}/fingertip_positions.png".format(save_dir))
 
   plt.figure()
-  plt.title("Object position".format(i))
-  plt.plot(list(range(total_timesteps)), x_pos_array[:,0], c="C0", label="x")
-  plt.plot(list(range(total_timesteps)), x_pos_array[:,1], c="C1", label="y")
-  plt.plot(list(range(total_timesteps)), x_pos_array[:,2], c="C2", label="z")
+  plt.suptitle("Object pose")
+  plt.figure(figsize=(6, 12))
+  plt.subplots_adjust(hspace=0.3)
+  plt.subplot(2, 1, 1)
+  plt.title("Object position")
+  for i in range(3):
+    plt.plot(list(range(total_timesteps)), x_pos_array[:,i], c="C{}".format(i), label="actual - dimension {}".format(i))
+    plt.plot(list(range(total_timesteps)), np.ones(total_timesteps)*x_goal[0,i], ":", c="C{}".format(i), label="goal")
   plt.legend()
   
+  plt.subplot(2, 1, 2)
+  plt.title("Object Orientation")
+  for i in range(4):
+    plt.plot(list(range(total_timesteps)), x_quat_array[:,i], c="C{}".format(i), label="actual - dimension {}".format(i))
+    plt.plot(list(range(total_timesteps)), np.ones(total_timesteps)*x_goal[0,i+3], ":", c="C{}".format(i), label="goal")
+  plt.legend()
+
   if args.save_state_log:
     plt.savefig("{}/object_position.png".format(save_dir))
 
