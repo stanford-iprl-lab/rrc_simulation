@@ -16,7 +16,8 @@ def impedance_controller(
                         q_current,  
                         dq_current,
                         custom_pinocchio_utils,
-                        tip_forces_wf = None
+                        tip_forces_wf = None,
+                        tol           = 0.008
                         ):
   torque = 0
   goal_reached = True
@@ -33,6 +34,7 @@ def impedance_controller(
                                                 dq_current,
                                                 custom_pinocchio_utils,
                                                 tip_force_wf = f_wf,
+                                                tol          = tol
                                                 )
     goal_reached = goal_reached and finger_goal_reached
     torque += finger_torque
@@ -55,12 +57,13 @@ def impedance_controller_single_finger(
                                       dq_current,
                                       custom_pinocchio_utils,
                                       tip_force_wf = None,
+                                      tol          = 0.008
                                       ):
-  Kp_x = 130
-  Kp_y = 130
+  Kp_x = 200
+  Kp_y = 200
   Kp_z = 300
   Kp = np.diag([Kp_x, Kp_y, Kp_z])
-  Kv_x = Kv_y = 6
+  Kv_x = Kv_y = 7
   Kv_z = 7
   Kv = np.diag([Kv_x, Kv_y, Kv_z])
 
@@ -70,6 +73,7 @@ def impedance_controller_single_finger(
   delta_x = np.expand_dims(np.array(tip_desired) - np.array(x_current), 1)
   #print("Current x: {}".format(x_current))
   #print("Desired x: {}".format(tip_desired))
+  #print(delta_x)
   
   # Get full Jacobian for finger
   Ji = custom_pinocchio_utils.get_tip_link_jacobian(finger_id, q_current)
@@ -84,7 +88,7 @@ def impedance_controller_single_finger(
   else:
     torque = np.squeeze(Ji.T @ (Kp @ delta_x - Kv @ dx_current))
   
-  tol = 0.008
+  tol = tol
   goal_reached = (np.linalg.norm(delta_x) < tol)
   #print("Finger {} delta".format(finger_id))
   #print(np.linalg.norm(delta_x))
@@ -294,26 +298,25 @@ def get_waypoints_to_cp_param(obj_pose, cube_half_size, fingertip_pos, cp_param)
   non_zero_dim = np.argmax(abs(cp_param))
   zero_dim = abs(1-non_zero_dim)
 
-  print(fingertip_pos_of)
-
   # Work with absolute values, and then correct sign at the end
   w = np.expand_dims(fingertip_pos_of,0)
+  w[0,2] = 0.05 # Bring fingers lower, to avoid links colliding with each other
   if abs(fingertip_pos_of[non_zero_dim]) < abs(cp_pos_of[non_zero_dim] + tol):
     w[0,non_zero_dim] = cp_param[non_zero_dim] * (abs(cp_pos_of[non_zero_dim]) + tol) # fix sign
-    waypoints.append(w.copy())
+  waypoints.append(w.copy())
 
   # Align zero_dim 
   w[0,zero_dim] = 0
   waypoints.append(w.copy())
 
-  w[0,non_zero_dim] = cp_pos_of[non_zero_dim]
-  w[0,2] = 0
-  waypoints.append(w.copy())
+  #w[0,non_zero_dim] = cp_pos_of[non_zero_dim]
+  #w[0,2] = 0
+  #waypoints.append(w.copy())
 
   # Transform waypoints from object frame to world frame
   waypoints_wf = []
   for wp in waypoints:
-    waypoints_wf.append(get_wf_from_of(wp, obj_pose))
+    waypoints_wf.append(np.squeeze(get_wf_from_of(wp, obj_pose)))
   
   return waypoints_wf
 
