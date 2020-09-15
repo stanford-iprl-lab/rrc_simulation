@@ -65,6 +65,7 @@ def main():
   dx_dim  = npzfile["dx_dim"]
   t_soln  = npzfile["t"]
   x_goal  = npzfile["x_goal"]
+  x0      = npzfile["x0"]
   x_soln  = npzfile["x"]
   dx_soln = npzfile["dx"]
   l_soln  = npzfile["l"]
@@ -72,12 +73,16 @@ def main():
   dt      = npzfile["dt"]
   cp_params = npzfile["cp_params"]
 
-  # Set initial object pose, for testing
+  # Set initial object pose to match npz file
+  x0_pos = x0[0,0:3]
+  x0_quat = x0[0,3:]
+  #x0_pos = np.array([0, 0.01, 0.0325]) # test
+  #x0_quat = np.array([0, 0, -0.707, 0.707]) # test
   init_object_pose = move_cube.Pose(
-                position=np.array([1,1,0]),
-                orientation=np.array([1,0,0,0]),
+                position=x0_pos,
+                orientation=x0_quat,
             )
-  init_object_pose = None # Use default init pose
+  #init_object_pose = None # Use default init pose
 
   platform = trifinger_platform.TriFingerPlatform(
       visualization=args.visualize, enable_cameras=args.enable_cameras, initial_object_pose=init_object_pose
@@ -87,7 +92,6 @@ def main():
   custom_pinocchio_utils = CustomPinocchioUtils(platform.simfinger.finger_urdf_path, platform.simfinger.tip_link_names) 
   
   fingertip_goal_list = []
-  #cube_pos_wf, cube_quat_wf = platform.cube.get_state()
   cube_half_size = move_cube._CUBE_WIDTH/2 + 0.005 # Fudge the cube dimensions slightly for computing contact point positions in world frame to account for fingertip radius
 
   pybullet.resetDebugVisualizerCamera(cameraDistance=1.54, cameraYaw=4.749999523162842, cameraPitch=-42.44065475463867, cameraTargetPosition=(-0.11500892043113708, 0.6501579880714417, -0.6364855170249939))
@@ -102,6 +106,15 @@ def main():
   for waypoint_i in range(nGrid):
   # For testing - hold joints at initial positions
     #while(1):
+    #  # Get initial fingertip positions in world frame
+    #  current_position = platform.get_robot_observation(t).position
+    #  for finger_id in range(3):
+    #    tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[finger_id]
+    #    fingertip_pos_list[finger_id].append(tip_current)
+    #  # Get object pose
+    #  obj_pose = platform.get_object_pose(t)
+    #  get_initial_cp_params(obj_pose, cube_half_size, fingertip_pos_list)
+    #  quit()
     #  finger_action = platform.Action(position=platform.spaces.robot_position.default)
     #  t = platform.append_desired_action(finger_action)
     #  time.sleep(platform.get_time_step())
@@ -118,7 +131,7 @@ def main():
     for i in range(3):
       fingertip_goal_list.append(get_cp_wf_from_cp_param(cp_params[i], next_cube_pos_wf, next_cube_quat_wf, cube_half_size))
 
-    while not goal_reached:
+    while not goal_reached and t < 3750:
       # Get joint positions        
       current_position = platform.get_robot_observation(t).position
 
@@ -134,8 +147,8 @@ def main():
                                     current_position,
                                     current_velocity,
                                     custom_pinocchio_utils,
-                                    #tip_forces_wf = None,
-                                    tip_forces_wf = tip_forces_wf,
+                                    tip_forces_wf = None,
+                                    #tip_forces_wf = tip_forces_wf,
                                     )
 
       finger_action = platform.Action(torque=torque)
@@ -153,6 +166,12 @@ def main():
       x_quat_list.append(cube_quat_wf)
 
       time.sleep(platform.get_time_step())
+
+  #while(t < 3750):
+  #  finger_action = platform.Action(torque=torque)
+  #  t = platform.append_desired_action(finger_action)
+  #  time.sleep(platform.get_time_step())
+
 
   """
   PLOTTING
