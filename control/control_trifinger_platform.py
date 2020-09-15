@@ -18,6 +18,8 @@ from rrc_simulation import trifinger_platform, sample, visual_objects
 from rrc_simulation.tasks import move_cube
 from custom_pinocchio_utils import CustomPinocchioUtils
 from controller_utils import *
+#from traj_opt.fixed_contact_point_opt import FixedContactPointOpt
+#from traj_opt import fixed_contact_point_opt
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument(
@@ -65,33 +67,22 @@ num_fingers = 3
 episode_length = move_cube.episode_length
 
 def main():
+  if args.npz_file is not None:
+    # Open .npz file and parse
+    npzfile   = np.load(args.npz_file)
+    nGrid     = npzfile["t"].shape[0]
+    x_goal    = npzfile["x_goal"]
+    x0        = npzfile["x0"]
+    x_soln    = npzfile["x"]
+    l_wf_soln = npzfile["l_wf"]
+    dt        = npzfile["dt"]
+    cp_params = npzfile["cp_params"]
 
-  save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal = run_episode()
-  plot_state(save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal)
-
-"""
-Run episode
-"""
-def run_episode():
-  # Lists for storing values to plot
-  fingertip_pos_list = [[],[],[]] # Containts 3 lists, one for each finger
-  x_pos_list = [] # Object positions
-  x_quat_list = [] # Object positions
-
-  # Open .npz file and parse
-  npzfile   = np.load(args.npz_file)
-  nGrid     = npzfile["t"].shape[0]
-  x_dim     = npzfile["x_dim"]
-  dx_dim    = npzfile["dx_dim"]
-  t_soln    = npzfile["t"]
-  x_goal    = npzfile["x_goal"]
-  x0        = npzfile["x0"]
-  x_soln    = npzfile["x"]
-  dx_soln   = npzfile["dx"]
-  l_soln    = npzfile["l"]
-  l_wf_soln = npzfile["l_wf"]
-  dt        = npzfile["dt"]
-  cp_params = npzfile["cp_params"]
+  else:
+    x_goal = np.array([[0,0,0.1+0.0325,0,0,0,1]]) # 10 cm lift
+    x0        = np.array([[0,0,0.0325,0,0,0,1]])
+    nGrid = 150
+    dt = 0.1
 
   # Save directory
   x_goal_str = "-".join(map(str,x_goal[0,:].tolist()))
@@ -101,7 +92,7 @@ def run_episode():
   # Create directory if it does not exist
   if not os.path.exists(save_dir):
     os.makedirs(save_dir)
-
+  
   # Set initial object pose to match npz file
   x0_pos = x0[0,0:3]
   x0_quat = x0[0,3:]
@@ -121,6 +112,76 @@ def run_episode():
   # Instantiate custom pinocchio utils class for access to Jacobian
   custom_pinocchio_utils = CustomPinocchioUtils(platform.simfinger.finger_urdf_path, platform.simfinger.tip_link_names) 
   
+  if args.npz_file is None:
+    x_soln, l_wf_soln, cp_params = run_traj_opt(platform, custom_pinocchio_utils, x0, x_goal, nGrid, dt)
+
+  fingertip_pos_list, x_pos_list, x_quat_list, x_goal = run_episode(platform,
+                                                                    custom_pinocchio_utils,
+                                                                    nGrid,
+                                                                    x0,
+                                                                    x_goal,
+                                                                    x_soln,
+                                                                    l_wf_soln,
+                                                                    cp_params,
+                                                                    )
+
+  plot_state(save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal)
+
+"""
+Given intial state, run trajectory optimization
+"""
+def run_traj_opt(platform, custom_pinocchio_utils, x0, x_goal, nGrid, dt):
+  obj_pose = platform.get_object_pose(0)
+  current_position = platform.get_robot_observation(0).position
+  init_fingertip_pos_list = [[],[],[]] # Containts 3 lists, one for each finger
+  for finger_id in range(3):
+    tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[finger_id]
+    init_fingertip_pos_list[finger_id].append(tip_current)
+
+  # Get initial contact points and waypoints to them
+  cp_params = get_initial_cp_params(obj_pose, init_fingertip_pos_list)
+
+  cube_shape = (move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH)
+  cube_mass = 0.02
+
+  # Formulate and solve optimization problem
+  opt_problem = FixedContactPointOpt(
+                                    nGrid     = nGrid, # Number of timesteps
+                                    dt        = dt,   # Length of each timestep (seconds)
+                                    cp_params = cp_params,
+                                    x0        = x0,
+                                    x_goal    = x_goal,
+                                    platform  = platform,
+                                    obj_shape = cube_shape,
+                                    obj_mass  = cube_mass,
+                                    )
+  x_soln     = opt_problem.x_soln
+  l_wf_soln  = opt_problem.l_wf_soln,
+  cp_params  = np.array(cp_params)
+  
+  return x_soln, l_wf_soln, cp_params
+  
+"""
+Run episode
+Inputs:
+nGrid
+"""
+def run_episode(platform, custom_pinocchio_utils,
+                nGrid,
+                x0,
+                x_goal,
+                x_soln,
+                l_wf_soln,
+                cp_params,
+                ):
+  # Lists for storing values to plot
+  fingertip_pos_list = [[],[],[]] # Containts 3 lists, one for each finger
+  x_pos_list = [] # Object positions
+  x_quat_list = [] # Object positions
+
+  x0_pos = x0[0,0:3]
+  x0_quat = x0[0,3:]
+
   #cube_half_size = move_cube._CUBE_WIDTH/2
   cube_half_size = move_cube._CUBE_WIDTH/2 + 0.008 # Fudge the cube dimensions slightly for computing contact point positions in world frame to account for fingertip radius
 
@@ -146,19 +207,13 @@ def run_episode():
 
   # Get initial fingertip positions in world frame
   current_position = platform.get_robot_observation(t).position
-  init_fingertip_pos_list = [[],[],[]] # Containts 3 lists, one for each finger
-  for finger_id in range(3):
-    tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[finger_id]
-    init_fingertip_pos_list[finger_id].append(tip_current)
 
   # Get initial contact points and waypoints to them
-  init_cps = get_initial_cp_params(obj_pose, init_fingertip_pos_list)
   finger_waypoints_list = []
   for f_i in range(3):
     tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[f_i]
     waypoints = get_waypoints_to_cp_param(obj_pose, cube_half_size, tip_current, cp_params[f_i])
     finger_waypoints_list.append(waypoints)
-
   
   pre_traj_waypoint_i = 0
   traj_waypoint_i = 0
@@ -228,7 +283,7 @@ def run_episode():
 
     #time.sleep(platform.get_time_step())
 
-  return save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal
+  return fingertip_pos_list, x_pos_list, x_quat_list, x_goal
   
 """
 PLOTTING
