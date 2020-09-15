@@ -9,6 +9,7 @@ from datetime import date, datetime
 import matplotlib.pyplot as plt
 import pybullet
 import os
+from tqdm import tqdm
 
 import cv2
 import numpy as np
@@ -158,89 +159,76 @@ def run_episode():
     waypoints = get_waypoints_to_cp_param(obj_pose, cube_half_size, tip_current, cp_params[f_i])
     finger_waypoints_list.append(waypoints)
 
-  # Track fingertip waypoints to get to initial contact point
-  for waypoint_i in range(2):
-    # Get fingertip goals from finger_waypoints_list
-    fingertip_goal_list = []
-    for f_i in range(num_fingers):
-      fingertip_goal_list.append(finger_waypoints_list[f_i][waypoint_i])
-    finger_waypoints.set_state(fingertip_goal_list)
-    goal_reached = False
-    while not goal_reached and t < episode_length:
-      # Get joint positions        
-      current_position = platform.get_robot_observation(t).position
-      # Joint velocities
-      current_velocity = platform.get_robot_observation(t).velocity
-      torque, goal_reached = impedance_controller(
-                                    fingertip_goal_list,
-                                    current_position,
-                                    current_velocity,
-                                    custom_pinocchio_utils,
-                                    tip_forces_wf = None,
-                                    tol           = 0.009
-                                    )
-      finger_action = platform.Action(torque=torque)
-      t = platform.append_desired_action(finger_action)
-      time.sleep(platform.get_time_step())
+  
+  pre_traj_waypoint_i = 0
+  traj_waypoint_i = 0
+  goal_reached = False
+  for timestep in tqdm(range(episode_length)):
 
-      # Save current state for plotting
-      # Add fingertip positions to list
-      current_position = platform.get_robot_observation(t).position
-      for finger_id in range(3):
-        tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[finger_id]
-        fingertip_pos_list[finger_id].append(tip_current)
-      # Add current object pose to list
-      obj_pose = platform.get_object_pose(t)
-      x_pos_list.append(obj_pose.position)
-      x_quat_list.append(obj_pose.orientation)
+    # Get joint positions        
+    current_position = platform.get_robot_observation(t).position
+    # Joint velocities
+    current_velocity = platform.get_robot_observation(t).velocity
 
-  # Follow trajectory to bring finger tips to object and move object
-  for waypoint_i in range(nGrid):
-    # Get fingertip target positions from trajectory
-    goal_reached = False
-    fingertip_goal_list = []
-    next_cube_pos_wf = x_soln[waypoint_i, 0:3]
-    next_cube_quat_wf = x_soln[waypoint_i, 3:]
+    # Follow trajectory to position fingertips before moving to object
+    if pre_traj_waypoint_i < len(finger_waypoints_list[0]):
+      # Get fingertip goals from finger_waypoints_list
+      fingertip_goal_list = []
+      for f_i in range(num_fingers):
+        fingertip_goal_list.append(finger_waypoints_list[f_i][pre_traj_waypoint_i])
+      tol = 0.009
+      tip_forces_wf = None
+    # Follow trajectory to lift object
+    elif traj_waypoint_i < nGrid:
+      fingertip_goal_list = []
+      next_cube_pos_wf = x_soln[traj_waypoint_i, 0:3]
+      next_cube_quat_wf = x_soln[traj_waypoint_i, 3:]
 
-    fingertip_goal_list = get_cp_wf_list_from_cp_params(cp_params, next_cube_pos_wf, next_cube_quat_wf, cube_half_size)
-
-    while not goal_reached and t < episode_length:
-      # Get joint positions        
-      current_position = platform.get_robot_observation(t).position
-      # Joint velocities
-      current_velocity = platform.get_robot_observation(t).velocity
-      
+      fingertip_goal_list = get_cp_wf_list_from_cp_params(cp_params,
+                                                          next_cube_pos_wf,
+                                                          next_cube_quat_wf,
+                                                          cube_half_size)
       # Get target contact forces in world frame 
-      tip_forces_wf = l_wf_soln[waypoint_i, :]
-      #print("desired tip forces: {}".format(tip_forces_wf))
+      tip_forces_wf = l_wf_soln[traj_waypoint_i, :]
+      tol = 0.008
+    
+    finger_waypoints.set_state(fingertip_goal_list)
 
-      torque, goal_reached = impedance_controller(
-                                    fingertip_goal_list,
-                                    current_position,
-                                    current_velocity,
-                                    custom_pinocchio_utils,
-                                    #tip_forces_wf = None,
-                                    tip_forces_wf = tip_forces_wf,
-                                    tol           = 0.005
-                                    )
+    torque, goal_reached = impedance_controller(
+                                  fingertip_goal_list,
+                                  current_position,
+                                  current_velocity,
+                                  custom_pinocchio_utils,
+                                  tip_forces_wf = tip_forces_wf,
+                                  tol           = tol
+                                  )
 
-      finger_action = platform.Action(torque=torque)
-      t = platform.append_desired_action(finger_action)
-      time.sleep(platform.get_time_step())
+    if goal_reached:
+      goal_reached = False
+      if pre_traj_waypoint_i < len(finger_waypoints_list[0]):
+        pre_traj_waypoint_i += 1
+      elif traj_waypoint_i < nGrid:
+        traj_waypoint_i += 1
 
-      # Save current state for plotting
-      # Add fingertip positions to list
-      current_position = platform.get_robot_observation(t).position
-      for finger_id in range(3):
-        tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[finger_id]
-        fingertip_pos_list[finger_id].append(tip_current)
-      # Add current object pose to list
-      obj_pose = platform.get_object_pose(t)
-      x_pos_list.append(obj_pose.position)
-      x_quat_list.append(obj_pose.orientation)
+    # Save current state for plotting
+    # Add fingertip positions to list
+    current_position = platform.get_robot_observation(t).position
+    for finger_id in range(3):
+      tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[finger_id]
+      fingertip_pos_list[finger_id].append(tip_current)
+    # Add current object pose to list
+    obj_pose = platform.get_object_pose(t)
+    x_pos_list.append(obj_pose.position)
+    x_quat_list.append(obj_pose.orientation)
+
+    # Apply torque action
+    finger_action = platform.Action(torque=torque)
+    t = platform.append_desired_action(finger_action)
+
+    #time.sleep(platform.get_time_step())
 
   return save_dir, fingertip_pos_list, x_pos_list, x_quat_list
-
+  
 """
 PLOTTING
 """
