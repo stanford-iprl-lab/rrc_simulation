@@ -11,8 +11,6 @@ class FixedContactPointSystem:
                nGrid     = 100,
                dt        = 0.1,
                cp_params = None,
-               platform  = None,
-               obj_pose  = None,
                obj_shape = None,
                obj_mass  = None,
                log_file  = None,
@@ -32,7 +30,6 @@ class FixedContactPointSystem:
 
     self.p = 100
 
-    self.obj_pose = obj_pose
     self.obj_shape = obj_shape # (width, length, height), (x, y, z)
     self.obj_mass = obj_mass
     self.obj_mu = 1
@@ -54,8 +51,6 @@ class FixedContactPointSystem:
     self.H = np.zeros((l_i*self.fnum,self.obj_dof*self.fnum))
     for i in range(self.fnum):
       self.H[i*l_i:i*l_i+l_i, i*self.obj_dof:i*self.obj_dof+self.obj_dof] = H_i
-
-    self.platform = platform 
 
     self.log_file = log_file
 
@@ -326,7 +321,7 @@ class FixedContactPointSystem:
   """
   def get_grasp_matrix(self, x):
     # Transformation matrix from object frame to world frame
-    quat_o_2_w = [x[0,4], x[0,5], x[0,6], x[0,3]]
+    quat_o_2_w = [x[0,3], x[0,4], x[0,5], x[0,6]]
 
     G_list = []
 
@@ -402,7 +397,7 @@ class FixedContactPointSystem:
     #return H
 
   def get_R_o_2_w(self, x):
-    quat = [x[0,4], x[0,5], x[0,6], x[0,3]]
+    quat = [x[0,3], x[0,4], x[0,5], x[0,6]]
     R = utils.get_matrix_from_quaternion(quat)
     return R
 
@@ -414,7 +409,7 @@ class FixedContactPointSystem:
   def get_H_o_2_w(self, x):
     H = SX.zeros((4,4))
     
-    quat = [x[0,4], x[0,5], x[0,6], x[0,3]]
+    quat = [x[0,3], x[0,4], x[0,5], x[0,6]]
     R = utils.get_matrix_from_quaternion(quat)
     p = np.array([x[0,0], x[0,1], x[0,2]])
 
@@ -431,7 +426,7 @@ class FixedContactPointSystem:
   """
   def get_H_w_2_o(self, x):
     H = np.zeros((4,4))
-    quat = [x[0,4], x[0,5], x[0,6], x[0,3]]
+    quat = [x[0,3], x[0,4], x[0,5], x[0,6]]
     p = np.array([x[0,0], x[0,1], x[0,2]])
     p_inv, quat_inv = utils.invert_transform(p, quat)
     R = utils.get_matrix_from_quaternion(quat_inv)
@@ -586,7 +581,7 @@ class FixedContactPointSystem:
     x_range = np.array([
                        [-5,5], # x coord range
                        [-5,5], # y coord range
-                       [-5,5], # z coord range
+                       [0.0325,5], # z coord range
                        [-np.inf, np.inf], # qw range
                        [-np.inf, np.inf], # qx range
                        [-np.inf, np.inf], # qx range
