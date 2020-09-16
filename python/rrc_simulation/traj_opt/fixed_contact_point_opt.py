@@ -51,10 +51,12 @@ class FixedContactPointOpt:
 
     # Formulate nlp
     problem = {"x":self.z, "f":self.cost, "g":self.g}
-    #options = {"ipopt.print_level":5}
     options = {"ipopt.max_iter":10000,
                 "ipopt.tol": 1e-4,
+                "ipopt.print_level":0,
+                "print_time": 0
               }
+    #options["print_time"] = 0;
     #options = {"iteration_callback": MyCallback('callback',self.z.shape[0],self.g.shape[0],self.system)}
     #options["monitor"] = ["nlp_g"]
     #options = {"monitor":["nlp_f","nlp_g"]}
@@ -112,7 +114,7 @@ class FixedContactPointOpt:
 
     # Save solver time
     statistics = self.solver.stats()
-    self.total_time_sec = statistics["t_wall_total"]
+    #self.total_time_sec = statistics["t_wall_total"]
 
   """
   Computes cost
