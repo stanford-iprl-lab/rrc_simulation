@@ -291,6 +291,26 @@ class FixedContactPointSystem:
     #quit()
     return f_constraints
 
+  """
+  Constrain state at end of trajectory to be at x_goal
+  With a slack variable
+  First, just add tolerance
+  """
+  def x_goal_constraint(self, s_flat, x_goal):
+    x, dx  = self.s_unpack(s_flat)
+    x_end = x[-1, :]
+
+    print(x_goal.shape)
+    print(x_end.shape)
+    f = 0
+    
+    for i in range(3):
+      f += (x_goal[0, i] - x_end[0, i]) ** 2
+
+    print(f)
+    #quit()
+    return f
+
 ################################################################################
 # End of constraint functions
 ################################################################################
@@ -583,10 +603,10 @@ class FixedContactPointSystem:
                        [-0.15, 0.15], # x coord range
                        [-0.15,0.15], # y coord range
                        [0.0325,5], # z coord range
+                       [-np.inf, np.inf], # qx range
+                       [-np.inf, np.inf], # qy range
+                       [-np.inf, np.inf], # qz range
                        [-np.inf, np.inf], # qw range
-                       [-np.inf, np.inf], # qx range
-                       [-np.inf, np.inf], # qx range
-                       [-np.inf, np.inf], # qx range
                        ])
     x_lb = np.ones(x.shape) * x_range[:,0]
     x_ub = np.ones(x.shape) * x_range[:,1]
@@ -600,15 +620,24 @@ class FixedContactPointSystem:
     if x_goal is not None:
       x_lb[-1] = x_goal
       x_ub[-1] = x_goal
+      # Just z goal
+      #x_lb[-1,1] = x_goal[0,1]
+      #x_ub[-1,1] = x_goal[0,1]
     
     # Object velocity constraints
     dx_range = np.array([
-                       [-10,10], # x vel range
-                       [-10,10], # y vel range
-                       [-10,10], # z vel range
-                       [-np.pi, np.pi], # angular velocity range
-                       [-np.pi, np.pi], # angular velocity range
-                       [-np.pi, np.pi], # angular velocity range
+                       [-np.inf, np.inf], # qw range
+                       [-np.inf, np.inf], # qw range
+                       [-np.inf, np.inf], # qw range
+                       [-np.inf, np.inf], # qx range
+                       [-np.inf, np.inf], # qx range
+                       [-np.inf, np.inf], # qx range
+                       #[-10,10], # x vel range
+                       #[-10,10], # y vel range
+                       #[-10,10], # z vel range
+                       #[-2*np.pi, 2*np.pi], # angular velocity range
+                       #[-2*np.pi, 2*np.pi], # angular velocity range
+                       #[-2*np.pi, 2*np.pi], # angular velocity range
                        ])
     dx_lb = np.ones(dx.shape) * dx_range[:,0]
     dx_ub = np.ones(dx.shape) * dx_range[:,1]
@@ -661,20 +690,23 @@ class FixedContactPointSystem:
   Set initial trajectory guess
   For now, just define everything to be 0
   """
-  def get_initial_guess(self, z_var):
+  def get_initial_guess(self, z_var, x0, x_goal):
     t_var, s_var, l_var = self.decvar_unpack(z_var)
 
     # Define time points to be equally spaced
     t_traj = np.linspace(0,self.tf,self.nGrid) 
 
-    s_traj = np.zeros(s_var.shape)
-    x_traj, dx_traj = self.s_unpack(s_traj)
-    x_traj[:,6] = 1
+    x_var, dx_var = self.s_unpack(s_var)
+    dx_traj = np.zeros(dx_var.shape)
+    x_traj = np.squeeze(np.linspace(x0, x_goal, self.nGrid))
     s_traj = self.s_pack(x_traj, dx_traj)
     
-    l_traj = np.zeros(self.l_unpack(l_var).shape)
-    #l_traj[:,0] = -0.1
-    #l_traj[:,4] = -0.1
+   
+    l_traj = np.ones(self.l_unpack(l_var).shape)
+    #l_traj[:,2] = 0.1
+    #l_traj[:,8] = 0.1
+    #l_traj[:,0] = 1
+    #l_traj[:,6] = 1
 
     z_traj = self.decvar_pack(t_traj, s_traj, self.l_pack(l_traj))
     
