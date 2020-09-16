@@ -44,7 +44,7 @@ class FixedContactPointOpt:
     #print(self.system.s_unpack(self.s_flat))
 
     # Formulate constraints
-    self.g, self.lbg, self.ubg = self.get_constraints(self.system, self.t, self.s_flat, self.l_flat)
+    self.g, self.lbg, self.ubg = self.get_constraints(self.system, self.t, self.s_flat, self.l_flat, x_goal)
 
     # Get cost function
     self.cost = self.cost_func(self.t,self.s_flat,self.l_flat,x_goal)
@@ -61,7 +61,7 @@ class FixedContactPointOpt:
     self.solver = nlpsol("S", "ipopt", problem, options)
 
     # TODO: intial guess
-    self.z0 = self.system.get_initial_guess(self.z)
+    self.z0 = self.system.get_initial_guess(self.z, x0, x_goal)
     #t0, s0, l0 = self.system.decvar_unpack(self.z0)
     #x0, dx0 = self.system.s_unpack(s0)
     #self.get_constraints(self.system,t0,s0,l0)
@@ -120,7 +120,7 @@ class FixedContactPointOpt:
   def cost_func(self,t,s_flat,l_flat,x_goal):
     cost = 0
     R = np.eye(self.system.fnum * self.system.l_i) * 1
-    Q = np.eye(self.system.x_dim) * 5
+    Q = np.eye(self.system.x_dim) * 1
 
     l = self.system.l_unpack(l_flat) 
     x,dx = self.system.s_unpack(s_flat)
@@ -146,7 +146,7 @@ class FixedContactPointOpt:
   """
   Formulates collocation constraints
   """
-  def get_constraints(self,system,t,s,l):
+  def get_constraints(self,system,t,s,l,x_goal):
     ds = system.dynamics(s,l)
     
     x,dx = system.s_unpack(s)
@@ -204,5 +204,11 @@ class FixedContactPointOpt:
         lbg.append(0)
         ubg.append(np.inf)
 
+    #tol = 1e-3
+    #x_goal_constraint = system.x_goal_constraint(s, x_goal)
+    #g.append(x_goal_constraint)
+    #lbg.append(-tol)
+    #ubg.append(tol)
+    
     return vertcat(*g), vertcat(*lbg), vertcat(*ubg)
     
