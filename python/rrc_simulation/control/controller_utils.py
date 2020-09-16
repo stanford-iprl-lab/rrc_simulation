@@ -61,7 +61,7 @@ def impedance_controller_single_finger(
                                       ):
   Kp_x = 200
   Kp_y = 200
-  Kp_z = 300
+  Kp_z = 400
   Kp = np.diag([Kp_x, Kp_y, Kp_z])
   Kv_x = Kv_y = 7
   Kv_z = 7
@@ -241,16 +241,17 @@ def get_initial_cp_params(obj_pose, fingertip_pos_list):
 
   # Set contact point params
   cp_params = []
+  z = 0
   for i in range(3):
     face = assigned_faces[i]
     if face == 1:
-      param = [0, -1, 0]
+      param = [0, -1, z]
     elif face == 2:
-      param = [0, 1, 0]
+      param = [0, 1, z]
     elif face == 3:
-      param = [1, 0, 0]
+      param = [1, 0, z]
     elif face == 5:
-      param = [-1, 0, 0]
+      param = [-1, 0, z]
     cp_params.append(param)
 
   print(assigned_faces)
@@ -291,7 +292,7 @@ def get_waypoints_to_cp_param(obj_pose, cube_half_size, fingertip_pos, cp_param)
   cp_pos_of = cp.pos_of
 
   waypoints = []
-  tol = 0.05
+  tol = 0.09
 
   # Get the non-zero cp_param dimension (to determine which face the contact point is on)
   # This works because we assume z is always 0, and either x or y is 0
@@ -300,7 +301,7 @@ def get_waypoints_to_cp_param(obj_pose, cube_half_size, fingertip_pos, cp_param)
 
   # Work with absolute values, and then correct sign at the end
   w = np.expand_dims(fingertip_pos_of,0)
-  w[0,2] = 0.05 # Bring fingers lower, to avoid links colliding with each other
+  w[0,2] = 0.07 # Bring fingers lower, to avoid links colliding with each other
   if abs(fingertip_pos_of[non_zero_dim]) < abs(cp_pos_of[non_zero_dim] + tol):
     w[0,non_zero_dim] = cp_param[non_zero_dim] * (abs(cp_pos_of[non_zero_dim]) + tol) # fix sign
   waypoints.append(w.copy())
