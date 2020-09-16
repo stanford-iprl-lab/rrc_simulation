@@ -86,17 +86,20 @@ class FixedContactPointSystem:
     # one row of l is [normal_force_f1, tangent_force_f1, ..., normal_force_fn, tangent_force_fn]
     l  = SX.sym("l" ,nGrid,fnum*self.l_i)
 
+    # Slack variables for x_goal 
+    a  = SX.sym("a", x_dim)
+
     # Flatten vectors
     s_flat = self.s_pack(x,dx)
     l_flat = self.l_pack(l)
 
-    return t,s_flat,l_flat
+    return t,s_flat,l_flat, a
 
   """
   Pack the decision variables into a single horizontal vector
   """
-  def decvar_pack(self,t,s,l):
-    z = vertcat(t,s,l)
+  def decvar_pack(self,t,s,l,a):
+    z = vertcat(t,s,l,a)
     return z
 
   """
@@ -105,6 +108,7 @@ class FixedContactPointSystem:
   s: packed state vector
   u: packed u vector (joint torques)
   l: packed l vector (contact forces)
+  a: slack variables
   """
   def decvar_unpack(self,z):
     qnum = self.qnum
@@ -120,9 +124,13 @@ class FixedContactPointSystem:
     s_flat = z[s_start_ind:s_end_ind]
   
     l_start_ind = s_end_ind
-    l_flat = z[l_start_ind:]
+    l_end_ind = l_start_ind + nGrid * fnum * self.l_i
+    l_flat = z[l_start_ind:l_end_ind]
     
-    return t,s_flat,l_flat
+    a_start_ind = l_end_ind
+    a = z[a_start_ind:]
+
+    return t,s_flat,l_flat,a
 
   """
   Unpack the state vector s
@@ -296,20 +304,16 @@ class FixedContactPointSystem:
   With a slack variable
   First, just add tolerance
   """
-  def x_goal_constraint(self, s_flat, x_goal):
+  def x_goal_constraint(self, s_flat,a, x_goal):
     x, dx  = self.s_unpack(s_flat)
     x_end = x[-1, :]
 
-    print(x_goal.shape)
-    print(x_end.shape)
-    f = 0
-    
-    for i in range(3):
-      f += (x_goal[0, i] - x_end[0, i]) ** 2
+    con_list = []
+    for i in range(self.x_dim):
+      f = a[i] - (x_goal[0, i] - x_end[0, i]) ** 2
+      con_list.append(f)
 
-    print(f)
-    #quit()
-    return f
+    return horzcat(*con_list)
 
 ################################################################################
 # End of constraint functions
@@ -477,8 +481,8 @@ class FixedContactPointSystem:
   def cp_param_to_cp_of(self, cp_param):
     pnorm = self.get_pnorm(cp_param)
 
-    print("cp_param: {}".format(cp_param))
-    print("pnorm: {}".format(pnorm))
+    #print("cp_param: {}".format(cp_param))
+    #print("pnorm: {}".format(pnorm))
 
     cp_of = []
     # Get cp position in OF
@@ -586,7 +590,7 @@ class FixedContactPointSystem:
       with open(self.log_file, "a+") as f:
         f.write("\nPath constraints: {}\n")
 
-    t,s_flat,l_flat = self.decvar_unpack(z)
+    t,s_flat,l_flat,a = self.decvar_unpack(z)
   
     nGrid = self.nGrid
 
@@ -617,12 +621,12 @@ class FixedContactPointSystem:
         f.write("Constrain x0 to {}\n".format(x0))
     x_lb[0] = x0 
     x_ub[0] = x0 
-    if x_goal is not None:
-      x_lb[-1] = x_goal
-      x_ub[-1] = x_goal
-      # Just z goal
-      #x_lb[-1,1] = x_goal[0,1]
-      #x_ub[-1,1] = x_goal[0,1]
+    #if x_goal is not None:
+    #  x_lb[-1] = x_goal
+    #  x_ub[-1] = x_goal
+    #  # Just z goal
+    #  #x_lb[-1,1] = x_goal[0,1]
+    #  #x_ub[-1,1] = x_goal[0,1]
     
     # Object velocity constraints
     dx_range = np.array([
@@ -680,9 +684,12 @@ class FixedContactPointSystem:
     s_lb = self.s_pack(x_lb,dx_lb)
     s_ub = self.s_pack(x_ub,dx_ub)
 
+    a_lb = np.zeros(a.shape)
+    a_ub = np.ones(a.shape) * np.inf
+
     # Pack the constraints for all dec vars
-    z_lb = self.decvar_pack(t_lb,s_lb,self.l_pack(l_lb))
-    z_ub = self.decvar_pack(t_ub,s_ub,self.l_pack(l_ub))
+    z_lb = self.decvar_pack(t_lb,s_lb,self.l_pack(l_lb),a_lb)
+    z_ub = self.decvar_pack(t_ub,s_ub,self.l_pack(l_ub),a_ub)
 
     return z_lb, z_ub
 
@@ -691,7 +698,7 @@ class FixedContactPointSystem:
   For now, just define everything to be 0
   """
   def get_initial_guess(self, z_var, x0, x_goal):
-    t_var, s_var, l_var = self.decvar_unpack(z_var)
+    t_var, s_var, l_var, a_var = self.decvar_unpack(z_var)
 
     # Define time points to be equally spaced
     t_traj = np.linspace(0,self.tf,self.nGrid) 
@@ -708,7 +715,9 @@ class FixedContactPointSystem:
     #l_traj[:,0] = 1
     #l_traj[:,6] = 1
 
-    z_traj = self.decvar_pack(t_traj, s_traj, self.l_pack(l_traj))
+    a_traj = np.zeros(a_var.shape)
+
+    z_traj = self.decvar_pack(t_traj, s_traj, self.l_pack(l_traj),a_traj)
     
     return z_traj
 

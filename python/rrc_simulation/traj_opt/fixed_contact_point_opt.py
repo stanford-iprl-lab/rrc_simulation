@@ -36,18 +36,18 @@ class FixedContactPointOpt:
     #self.system.get_grasp_matrix(x)
 
     # Get decision variables
-    self.t,self.s_flat,self.l_flat = self.system.dec_vars()
+    self.t,self.s_flat,self.l_flat,self.a = self.system.dec_vars()
     # Pack t,x,u,l into a vector of decision variables
-    self.z = self.system.decvar_pack(self.t,self.s_flat,self.l_flat)
+    self.z = self.system.decvar_pack(self.t,self.s_flat,self.l_flat,self.a)
 
     #print(self.z)
     #print(self.system.s_unpack(self.s_flat))
 
     # Formulate constraints
-    self.g, self.lbg, self.ubg = self.get_constraints(self.system, self.t, self.s_flat, self.l_flat, x_goal)
+    self.g, self.lbg, self.ubg = self.get_constraints(self.system, self.t, self.s_flat, self.l_flat,self.a,x_goal)
 
     # Get cost function
-    self.cost = self.cost_func(self.t,self.s_flat,self.l_flat,x_goal)
+    self.cost = self.cost_func(self.t,self.s_flat,self.l_flat,self.a,x_goal)
 
     # Formulate nlp
     problem = {"x":self.z, "f":self.cost, "g":self.g}
@@ -83,7 +83,7 @@ class FixedContactPointOpt:
 
     # Final solution and cost
     self.cost = r["f"]
-    self.t_soln,self.s_soln,l_soln_flat = self.system.decvar_unpack(z_soln)
+    self.t_soln,self.s_soln,l_soln_flat,a_soln = self.system.decvar_unpack(z_soln)
     self.x_soln, self.dx_soln = self.system.s_unpack(self.s_soln)
     self.l_soln = self.system.l_unpack(l_soln_flat)
 
@@ -117,7 +117,7 @@ class FixedContactPointOpt:
   """
   Computes cost
   """
-  def cost_func(self,t,s_flat,l_flat,x_goal):
+  def cost_func(self,t,s_flat,l_flat,a,x_goal):
     cost = 0
     R = np.eye(self.system.fnum * self.system.l_i) * 1
     Q = np.eye(self.system.x_dim) * 1
@@ -130,6 +130,10 @@ class FixedContactPointOpt:
     target_normal_forces[0,0] = n
     target_normal_forces[0,3] = n
     target_normal_forces[0,6] = n
+
+    # Slack variable penalties
+    for i in range(a.shape[0]):
+      cost += a[i]
 
     # Contact forces
     for i in range(t.shape[0]):
@@ -146,7 +150,7 @@ class FixedContactPointOpt:
   """
   Formulates collocation constraints
   """
-  def get_constraints(self,system,t,s,l,x_goal):
+  def get_constraints(self,system,t,s,l,a,x_goal):
     ds = system.dynamics(s,l)
     
     x,dx = system.s_unpack(s)
@@ -204,11 +208,13 @@ class FixedContactPointOpt:
         lbg.append(0)
         ubg.append(np.inf)
 
-    #tol = 1e-3
-    #x_goal_constraint = system.x_goal_constraint(s, x_goal)
-    #g.append(x_goal_constraint)
-    #lbg.append(-tol)
-    #ubg.append(tol)
+    #tol = 1e-16
+    x_goal_constraints = system.x_goal_constraint(s, a, x_goal)
+    for r in range(x_goal_constraints.shape[0]):
+      for c in range(x_goal_constraints.shape[1]):
+        g.append(x_goal_constraints[r,c])
+        lbg.append(0)
+        ubg.append(np.inf)
     
     return vertcat(*g), vertcat(*lbg), vertcat(*ubg)
     
