@@ -16,10 +16,9 @@ import numpy as np
 
 from rrc_simulation import trifinger_platform, sample, visual_objects
 from rrc_simulation.tasks import move_cube
-from custom_pinocchio_utils import CustomPinocchioUtils
-from controller_utils import *
-#from traj_opt.fixed_contact_point_opt import FixedContactPointOpt
-#from traj_opt import fixed_contact_point_opt
+from rrc_simulation.control.custom_pinocchio_utils import CustomPinocchioUtils
+from rrc_simulation.control.controller_utils import *
+from rrc_simulation.traj_opt.fixed_contact_point_opt import FixedContactPointOpt
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument(
@@ -79,10 +78,11 @@ def main():
     cp_params = npzfile["cp_params"]
 
   else:
-    x_goal = np.array([[0,0,0.1+0.0325,0,0,0,1]]) # 10 cm lift
-    x0        = np.array([[0,0,0.0325,0,0,0,1]])
-    nGrid = 150
-    dt = 0.1
+    yaw = -0.2
+    x_goal = np.array([[0,0,0.1+0.0325,0,0,np.cos(yaw/2),np.sin(yaw/2)]]) # 10 cm lift
+    x0        = np.array([[0,0,0.0325,0,0,np.cos(yaw/2),np.sin(yaw/2)]])
+    nGrid = 20
+    dt = 0.05
 
   # Save directory
   x_goal_str = "-".join(map(str,x_goal[0,:].tolist()))
@@ -113,7 +113,9 @@ def main():
   custom_pinocchio_utils = CustomPinocchioUtils(platform.simfinger.finger_urdf_path, platform.simfinger.tip_link_names) 
   
   if args.npz_file is None:
-    x_soln, l_wf_soln, cp_params = run_traj_opt(platform, custom_pinocchio_utils, x0, x_goal, nGrid, dt)
+    x_soln, l_wf_soln, cp_params = run_traj_opt(platform, custom_pinocchio_utils, x0, x_goal, nGrid, dt, save_dir)
+
+  #quit()
 
   fingertip_pos_list, x_pos_list, x_quat_list, x_goal = run_episode(platform,
                                                                     custom_pinocchio_utils,
@@ -130,7 +132,7 @@ def main():
 """
 Given intial state, run trajectory optimization
 """
-def run_traj_opt(platform, custom_pinocchio_utils, x0, x_goal, nGrid, dt):
+def run_traj_opt(platform, custom_pinocchio_utils, x0, x_goal, nGrid, dt, save_dir):
   obj_pose = platform.get_object_pose(0)
   current_position = platform.get_robot_observation(0).position
   init_fingertip_pos_list = [[],[],[]] # Containts 3 lists, one for each finger
@@ -151,14 +153,32 @@ def run_traj_opt(platform, custom_pinocchio_utils, x0, x_goal, nGrid, dt):
                                     cp_params = cp_params,
                                     x0        = x0,
                                     x_goal    = x_goal,
-                                    platform  = platform,
                                     obj_shape = cube_shape,
                                     obj_mass  = cube_mass,
                                     )
-  x_soln     = opt_problem.x_soln
-  l_wf_soln  = opt_problem.l_wf_soln,
+  x_soln     = np.array(opt_problem.x_soln)
+  l_wf_soln  = np.array(opt_problem.l_wf_soln)
   cp_params  = np.array(cp_params)
-  
+
+  # Save solution in npz file
+  save_string = "{}/trajectory".format(save_dir)
+  np.savez(save_string,
+           dt         = opt_problem.dt,
+           x0         = x0,
+           x_goal     = x_goal,
+           t          = opt_problem.t_soln,
+           x          = opt_problem.x_soln,
+           dx         = opt_problem.dx_soln,
+           l          = opt_problem.l_soln,
+           l_wf       = opt_problem.l_wf_soln,
+           cp_params  = np.array(cp_params),
+           obj_shape  = cube_shape,
+           obj_mass   = cube_mass,
+           fnum       = opt_problem.system.fnum, 
+           qnum       = opt_problem.system.qnum, 
+           x_dim      = opt_problem.system.x_dim, 
+           dx_dim     = opt_problem.system.dx_dim, 
+          )
   return x_soln, l_wf_soln, cp_params
   
 """
@@ -174,6 +194,7 @@ def run_episode(platform, custom_pinocchio_utils,
                 l_wf_soln,
                 cp_params,
                 ):
+
   # Lists for storing values to plot
   fingertip_pos_list = [[],[],[]] # Containts 3 lists, one for each finger
   x_pos_list = [] # Object positions
