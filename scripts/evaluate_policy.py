@@ -66,9 +66,9 @@ def main():
 
     # TODO: Replace with your environment if you used a custom one.
     env = gym.make(
-        "rrc_simulation.gym_wrapper:real_robot_challenge_phase_1-v1",
+        "rrc_simulation.gym_wrapper:real_robot_challenge_phase_1-v4",
         initializer=initializer,
-        action_type=cube_env.ActionType.POSITION,
+        action_type=cube_env.ActionType.TORQUE,
         visualization=False,
     )
 

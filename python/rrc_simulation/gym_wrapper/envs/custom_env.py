@@ -20,7 +20,7 @@ from scipy.spatial.transform import Rotation
 
 MAX_DIST = move_cube._max_cube_com_distance_to_center
 DIST_THRESH = move_cube._CUBE_WIDTH / 5
-ORI_THRESH = np.pi / 16
+ORI_THRESH = np.pi / 8
 REW_BONUS = 0.5
 
 camera_pos = (0.,0.2,-0.2)
@@ -38,7 +38,7 @@ class CurriculumInitializer:
     """Initializer that samples random initial states and goals."""
 
     def __init__(self, difficulty=1, initial_dist=move_cube._CUBE_WIDTH,
-                 num_levels=4, num_episodes=5):
+                 num_levels=4, num_episodes=5, fixed_goal=None):
         """Initialize.
 
         Args:
@@ -50,7 +50,10 @@ class CurriculumInitializer:
         self.num_levels = num_levels
         self._current_level = 0
         self.levels = np.linspace(initial_dist, MAX_DIST, num_levels)
-        self.episode_dist = np.array([np.inf for _ in range(num_episodes)])
+        self.final_dist = np.array([np.inf for _ in range(num_episodes)])
+        if difficulty == 4:
+            self.final_ori = np.array([np.inf for _ in range(num_episodes)])
+        self.fixed_goal = fixed_goal
 
     @property
     def current_level(self):
@@ -70,19 +73,23 @@ class CurriculumInitializer:
 
     def update_initializer(self, final_pose, goal_pose):
         assert np.all(goal_pose.position == self.goal_pose.position)
-        self.episode_dist = np.roll(self.episode_dist, 1)
+        self.final_dist = np.roll(self.final_dist, 1)
         final_dist = np.linalg.norm(goal_pose.position - final_pose.position)
-        self.episode_dist[0] = final_dist
-        if self._current_level == self.num_levels - 1:
-            sample_radius = 0
-        else:
-            sample_radius = self.levels[self.current_level]
-        if np.mean(self.episode_dist) < DIST_THRESH:
-            print("UPDATING INITIALIZER TO SAMPLE TO DISTANCE")
-            print("Old sampling distance: {}/New sampling distance: {}".format(
-                sample_radius, self.levels[min(self.num_levels - 1, self._current_level + 1)]))
-            if self._current_level < self.num_levels - 1:
-                self._current_level += 1
+        self.final_dist[0] = final_dist
+        if self.difficulty == 4:
+            self.final_ori = np.roll(self.final_ori, 1)
+            self.final_ori[0] = compute_orientation_error(goal_pose, final_pose, quad=True)
+
+        update_level = np.mean(self.final_dist) < DIST_THRESH
+        if self.difficulty == 4:
+            update_level = update_level and np.mean(self.final_ori) < ORI_THRESH
+
+        if update_level and self._current_level < self.num_levels - 1:
+            pre_sample_dist = self.goal_sample_radius
+            self._current_level += 1
+            post_sample_dist = self.goal_sample_radius
+            print("Old sampling distances: {}/New sampling distances: {}".format(
+                pre_sample_dist, post_sample_dist))
 
     def get_initial_state(self):
         """Get a random initial object pose (always on the ground)."""
@@ -94,6 +101,9 @@ class CurriculumInitializer:
 
     @property
     def goal_sample_radius(self):
+        if self.fixed_goal:
+            goal_dist = np.linalg.norm(self.fixed_goal.position)
+            return (goal_dist, goal_dist)
         if self._current_level == self.num_levels - 1:
             sample_radius_min = 0.
         else:
@@ -103,6 +113,9 @@ class CurriculumInitializer:
 
     def get_goal(self):
         """Get a random goal depending on the difficulty."""
+        if self.fixed_goal:
+            self.goal_pose = self.fixed_goal
+            return self.fixed_goal
         # goal_sample_radius is further than past distances
         sample_radius_min, sample_radius_max = self.goal_sample_radius
         x, y = self.random_xy(sample_radius_min, sample_radius_max)
@@ -112,12 +125,9 @@ class CurriculumInitializer:
 
 
 class RandomOrientationInitializer:
+    goal = move_cube.Pose(np.array([0,0,move_cube._CUBE_WIDTH/2]), np.array([0,0,0,1]))
+
     def __init__(self, difficulty=4):
-        goal = move_cube.Pose()
-        orientation = np.array([0,0,0,1])
-        goal.position = np.array((0, 0, move_cube._CUBE_WIDTH/2))
-        goal.orientation = orientation
-        self.goal = goal
         self.difficulty = difficulty
 
     def get_initial_state(self):
@@ -373,8 +383,6 @@ class PushCubeEnv(gym.Env):
 
         is_done = self.step_count == move_cube.episode_length
         if is_done and isinstance(self.initializer, CurriculumInitializer):
-            final_pose = move_cube.Pose(observation['object_position'])
-            goal_pose = move_cube.Pose(observation['goal_object_position'])
             self.info['is_success'] = (
                     np.linalg.norm(observation['object_position'] -
                         observation['goal_object_position']) < DIST_THRESH)
@@ -384,7 +392,7 @@ class PushCubeEnv(gym.Env):
             object_pose = move_cube.Pose.from_dict(dict(
                 position=observation['object_position'].flatten(),
                 orientation=observation['object_orientation'].flatten()))
-            self.initializer.update_initializer(final_pose, goal_pose)
+            self.initializer.update_initializer(object_pose, goal_pose)
             self.info['final_score'] = move_cube.evaluate_state(
                 goal_pose, object_pose, self.info['difficulty'])
             pos_idx = 3 if self.info['difficulty'] > 3 else 2
@@ -521,12 +529,13 @@ class FlattenGoalWrapper(gym.ObservationWrapper):
 
 
 class DistRewardWrapper(gym.RewardWrapper):
-    def __init__(self, env, target_dist=0.2, dist_coef=1., ac_norm_pen=0.2,
-                 final_step_only=True, augment_reward=True,
+    def __init__(self, env, target_dist=0.2, dist_coef=1., ori_coef=1.,
+                 ac_norm_pen=0.2, final_step_only=True, augment_reward=True,
                  rew_fn='lin'):
         super(DistRewardWrapper, self).__init__(env)
         self._target_dist = target_dist  # 0.156
         self._dist_coef = dist_coef
+        self._ori_coef = ori_coef
         self._ac_norm_pen = ac_norm_pen
         self._last_action = None
         self.final_step_only = final_step_only
@@ -560,12 +569,12 @@ class DistRewardWrapper(gym.RewardWrapper):
         final_dist = self.compute_goal_dist(self.info)
         if self.rew_fn == 'lin':
             rew = self._dist_coef * (1 - final_dist/self.target_dist)
-            if self.info.get('difficulty') == 4:
-                rew += self._dist_coef * (1 - self.compute_orientation_error())
+            if self.info['difficulty'] == 4:
+                rew += self._ori_coef * (1 - self.compute_orientation_error())
         elif self.rew_fn == 'exp':
             rew = self._dist_coef * np.exp(-final_dist/self.target_dist)
-            if self.info.get('difficulty') == 4:
-                rew += self._dist_coef * np.exp(-self.compute_orientation_error())
+            if self.info['difficulty'] == 4:
+                rew += self._ori_coef * np.exp(-self.compute_orientation_error())
         if self.augment_reward:
             rew += reward
         if self._ac_norm_pen:
@@ -585,7 +594,7 @@ class DistRewardWrapper(gym.RewardWrapper):
     def compute_orientation_error(self, scale=True):
         goal_pose, object_pose = self.get_goal_object_pose()
         orientation_error = compute_orientation_error(goal_pose, object_pose,
-                                                      scale=scale)
+                                                      scale=scale, quad=True)
         return orientation_error
 
     def compute_goal_dist(self, info):
@@ -631,7 +640,7 @@ class LogInfoWrapper(gym.Wrapper):
 
     def compute_goal_orientation_dist(self, info, scale=False):
         goal_pose, object_pose = self.get_goal_object_pose()
-        return compute_orientation_error(goal_pose, object_pose, scale=scale)       
+        return compute_orientation_error(goal_pose, object_pose, scale=scale, quad=True)
 
     def step(self, action):
         o, r, d, i = super(LogInfoWrapper, self).step(action)
@@ -664,11 +673,16 @@ class LogInfoWrapper(gym.Wrapper):
         return o, r, d, i
 
 
-def compute_orientation_error(goal_pose, actual_pose, scale=False):
+def compute_orientation_error(goal_pose, actual_pose, scale=False, quad=False):
     goal_rot = Rotation.from_quat(goal_pose.orientation)
     actual_rot = Rotation.from_quat(actual_pose.orientation)
     error_rot = goal_rot.inv() * actual_rot
     orientation_error = error_rot.magnitude()
+    # computes orientation error symmetric to 4 quadrants of the cube
+    if quad: 
+        orientation_error = orientation_error % (np.pi/2)
+        if orientation_error > np.pi/4:
+            orientation_error = np.pi/2 - orientation_error
     if scale:
         orientation_error = orientation_error / np.pi
     return orientation_error
