@@ -1,7 +1,7 @@
 import numpy as np
 from casadi import *
 
-from fixed_contact_point_system import FixedContactPointSystem
+from rrc_simulation.traj_opt.fixed_contact_point_system import FixedContactPointSystem
 
 class FixedContactPointOpt:
   
@@ -75,7 +75,7 @@ class FixedContactPointOpt:
     # TODO: path constraints
     #self.system.get_grasp_matrix(x0)
 
-    self.z_lb, self.z_ub = self.system.path_constraints(self.z, x0, dx0=np.zeros((1,6)), dx_end=np.zeros((1,6)))
+    self.z_lb, self.z_ub = self.system.path_constraints(self.z, x0, x_goal=x_goal, dx0=np.zeros((1,6)), dx_end=np.zeros((1,6)))
 
     # Set upper and lower bounds for decision variables
     r = self.solver(x0=self.z0,lbg=self.lbg,ubg=self.ubg,lbx=self.z_lb,ubx=self.z_ub)
@@ -119,13 +119,13 @@ class FixedContactPointOpt:
   """
   def cost_func(self,t,s_flat,l_flat,x_goal):
     cost = 0
-    R = np.eye(self.system.fnum * self.system.l_i)
-    Q = np.eye(self.system.x_dim) * 1
+    R = np.eye(self.system.fnum * self.system.l_i) * 1
+    Q = np.eye(self.system.x_dim) * 5
 
     l = self.system.l_unpack(l_flat) 
     x,dx = self.system.s_unpack(s_flat)
 
-    n = 0
+    n = 0.2
     target_normal_forces = np.zeros(l[0,:].shape)
     target_normal_forces[0,0] = n
     target_normal_forces[0,3] = n

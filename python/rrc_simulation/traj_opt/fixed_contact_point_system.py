@@ -3,7 +3,7 @@ from casadi import *
 import pybullet
 
 from rrc_simulation.tasks import move_cube
-import utils
+from rrc_simulation.traj_opt import utils
 
 class FixedContactPointSystem:
 
@@ -556,6 +556,7 @@ class FixedContactPointSystem:
   def path_constraints(self,
                        z,
                        x0,
+                       x_goal = None,
                        l0     = None,
                        dx0    = None,
                        dx_end = None,
@@ -579,8 +580,8 @@ class FixedContactPointSystem:
     # Unpack state vector
     x,dx = self.s_unpack(s_flat) # Object pose constraints
     x_range = np.array([
-                       [-5,5], # x coord range
-                       [-5,5], # y coord range
+                       [-0.15, 0.15], # x coord range
+                       [-0.15,0.15], # y coord range
                        [0.0325,5], # z coord range
                        [-np.inf, np.inf], # qw range
                        [-np.inf, np.inf], # qx range
@@ -596,6 +597,9 @@ class FixedContactPointSystem:
         f.write("Constrain x0 to {}\n".format(x0))
     x_lb[0] = x0 
     x_ub[0] = x0 
+    if x_goal is not None:
+      x_lb[-1] = x_goal
+      x_ub[-1] = x_goal
     
     # Object velocity constraints
     dx_range = np.array([
