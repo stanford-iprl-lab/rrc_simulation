@@ -63,7 +63,8 @@ def impedance_controller_single_finger(
   Kp_y = 200
   Kp_z = 400
   Kp = np.diag([Kp_x, Kp_y, Kp_z])
-  Kv_x = Kv_y = 7
+  Kv_x = 7
+  Kv_y = 7
   Kv_z = 7
   Kv = np.diag([Kv_x, Kv_y, Kv_z])
 
@@ -313,11 +314,24 @@ def get_waypoints_to_cp_param(obj_pose, cube_half_size, fingertip_pos, cp_param)
   #w[0,non_zero_dim] = cp_pos_of[non_zero_dim]
   #w[0,2] = 0
   #waypoints.append(w.copy())
+  #waypoints.append(cp_pos_of)
 
   # Transform waypoints from object frame to world frame
   waypoints_wf = []
+  waypoints_wf.append(fingertip_pos)
   for wp in waypoints:
     waypoints_wf.append(np.squeeze(get_wf_from_of(wp, obj_pose)))
-  
-  return waypoints_wf
+
+  # Add intermediate waypoints
+  interp_num = 6
+  waypoints_final = []
+  for i in range(len(waypoints_wf) - 1):
+    curr_w = waypoints_wf[i]
+    next_w = waypoints_wf[i+1] 
+
+    interp_pts = np.linspace(curr_w, next_w, interp_num)
+    for r in range(interp_num):
+      waypoints_final.append(interp_pts[r])
+
+  return waypoints_final
 
