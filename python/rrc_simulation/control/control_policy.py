@@ -61,6 +61,7 @@ class ImpedenceControllerPolicy:
         return move_cube.Pose.from_dict(observation[key])
 
     def set_waypoints(self, platform, observation):
+        self.step_count = 0
         self.platform = platform
         self.custom_pinocchio_utils = CustomPinocchioUtils(platform.simfinger.finger_urdf_path, platform.simfinger.tip_link_names)
         self.x_soln, self.l_wf_soln, self.cp_params = control_trifinger_platform.run_traj_opt(
@@ -97,52 +98,56 @@ class ImpedenceControllerPolicy:
         self.goal_reached = False
 
     def predict(self, observation):
+        self.step_count += 1
+        if self.step_count == 1:
+            return np.zeros_like(self.action_space.low)
         observation = observation['observation']
         current_position, current_velocity = observation['position'], observation['velocity']
 
         if self.pre_traj_waypoint_i < len(self.finger_waypoints_list[0]):
             # Get fingertip goals from finger_waypoints_list
-            fingertip_goal_list = []
+            self.fingertip_goal_list = []
             for f_i in range(3):
-                fingertip_goal_list.append(self.finger_waypoints_list[f_i][self.pre_traj_waypoint_i])
-            tol = 0.009
-            tip_forces_wf = None
+                self.fingertip_goal_list.append(self.finger_waypoints_list[f_i][self.pre_traj_waypoint_i])
+            self.tol = 0.009
+            self.tip_forces_wf = None
         # Follow trajectory to lift object
         elif self.traj_waypoint_i < self.nGrid:
-            fingertip_goal_list = []
+            self.fingertip_goal_list = []
             next_cube_pos_wf = self.x_soln[self.traj_waypoint_i, 0:3]
             next_cube_quat_wf = self.x_soln[self.traj_waypoint_i, 3:]
 
-            fingertip_goal_list = control_trifinger_platform.get_cp_wf_list_from_cp_params(self.cp_params,
+            self.fingertip_goal_list = control_trifinger_platform.get_cp_wf_list_from_cp_params(self.cp_params,
                                                                 next_cube_pos_wf,
                                                                 next_cube_quat_wf,
                                                                 self.cube_half_size)
             # Get target contact forces in world frame 
-            tip_forces_wf = self.l_wf_soln[self.traj_waypoint_i, :]
-            tol = 0.007
+            self.tip_forces_wf = self.l_wf_soln[self.traj_waypoint_i, :]
+            self.tol = 0.007
 
-        self.finger_waypoints.set_state(fingertip_goal_list)
+        self.finger_waypoints.set_state(self.fingertip_goal_list)
         # currently, torques are not limited to same range as what is used by simulator
         # torque commands are breaking limits for initial and final goal poses that require 
         # huge distances are covered in a few waypoints? Assign # waypoints wrt distance between
         # start and goal
         torque, self.goal_reached = impedance_controller(
-                                          fingertip_goal_list,
+                                          self.fingertip_goal_list,
                                           current_position,
                                           current_velocity,
                                           self.custom_pinocchio_utils,
-                                          tip_forces_wf = tip_forces_wf,
-                                          tol           = tol
+                                          tip_forces_wf = self.tip_forces_wf,
+                                          tol           = self.tol
                                           )
         torque = np.clip(torque, self.action_space.low, self.action_space.high)
 
         if self.goal_reached:
-            self.goal_reached = False
             if self.pre_traj_waypoint_i < len(self.finger_waypoints_list[0]):
                 self.pre_traj_waypoint_i += 1
+                self.goal_reached = False
             elif self.traj_waypoint_i < self.nGrid:
                 # print("trajectory waypoint: {}".format(self.traj_waypoint_i))
                 self.traj_waypoint_i += 1
+                self.goal_reached = False
         return torque
 
 

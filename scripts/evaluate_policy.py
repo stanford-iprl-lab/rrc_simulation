@@ -58,10 +58,10 @@ def main():
         sys.exit(1)
 
     # the poses are passes as JSON strings, so they need to be converted first
-    # initial_pose = move_cube.Pose.from_json(initial_pose_json)
-    # goal_pose = move_cube.Pose.from_json(goal_pose_json)
-    initial_pose = move_cube.Pose(position=np.array([0,0,0.0325]), orientation=np.array([0,0,0,1]))
-    goal_pose =  move_cube.Pose(position=np.array([0,0,0.0825]), orientation=np.array([0,0,0,1]))
+    initial_pose = move_cube.Pose.from_json(initial_pose_json)
+    goal_pose = move_cube.Pose.from_json(goal_pose_json)
+    # initial_pose = move_cube.Pose(position=np.array([0,0,0.0325]), orientation=np.array([0,0,0,1]))
+    # goal_pose =  move_cube.Pose(position=np.array([0,0,0.0825]), orientation=np.array([0,0,0,1]))
 
     # create a FixedInitializer with the given values
     initializer = cube_env.FixedInitializer(
@@ -94,13 +94,16 @@ def main():
     if isinstance(policy, ImpedenceControllerPolicy):
         policy.set_waypoints(env.platform, observation)
     accumulated_reward = 0
-    import pdb; pdb.set_trace()
+    #import pdb; pdb.set_trace()
     while not is_done:
         action = policy.predict(observation)
         observation, reward, is_done, info = env.step(action)
         accumulated_reward += reward
 
     print("Accumulated reward: {}".format(accumulated_reward))
+    dist_to_goal = np.linalg.norm(observation['desired_goal']['position'] -
+                                  observation['achieved_goal']['position'])
+    print(f"Final score: {reward}, Final dist to goal: {dist_to_goal}")
 
     # store the log for evaluation
     env.platform.store_action_log(output_file)
