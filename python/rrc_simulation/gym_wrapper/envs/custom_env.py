@@ -13,7 +13,7 @@ from gym.spaces import Dict
 from rrc_simulation import TriFingerPlatform
 from rrc_simulation import visual_objects
 from rrc_simulation.tasks import move_cube
-from rrc_simulation.gym_wrapper.envs.cube_env import ActionType
+from rrc_simulation.gym_wrapper.envs.cube_env import CubeEnv, ActionType
 from rrc_simulation.gym_wrapper.utils import configurable
 from scipy.spatial.transform import Rotation
 
