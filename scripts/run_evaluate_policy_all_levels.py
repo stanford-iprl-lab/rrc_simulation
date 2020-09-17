@@ -105,7 +105,7 @@ def main():
         )
         sys.exit(1)
 
-    levels = (1, 2, 3, 4)
+    levels = (2,) # (1, 2, 3, 4)
     runs_per_level = 10
 
     logfile_tmpl = os.path.join(

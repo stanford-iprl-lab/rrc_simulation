@@ -9,3 +9,4 @@ data/
 *.swp
 *.swo
 **/output/
+**/logs/
