@@ -679,7 +679,7 @@ def compute_orientation_error(goal_pose, actual_pose, scale=False, quad=False):
     error_rot = goal_rot.inv() * actual_rot
     orientation_error = error_rot.magnitude()
     # computes orientation error symmetric to 4 quadrants of the cube
-    if quad: 
+    if quad:
         orientation_error = orientation_error % (np.pi/2)
         if orientation_error > np.pi/4:
             orientation_error = np.pi/2 - orientation_error
