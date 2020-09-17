@@ -25,8 +25,8 @@ class ImpedenceControllerPolicy:
             yaw = 0.
             self.x0 = np.concatenate([initial_pose.position, initial_pose.orientation])[None]
             self.x_goal =  np.concatenate([goal_pose.position, goal_pose.orientation])[None]
-            self.nGrid = 20
-            self.dt = 0.05
+            self.nGrid = 50
+            self.dt = 0.01
         self.x0_pos = self.x0[0,0:3]
         self.x0_quat = self.x0[0,3:]
         init_goal_dist = np.linalg.norm(goal_pose.position - initial_pose.position)
@@ -60,13 +60,11 @@ class ImpedenceControllerPolicy:
         key = 'achieved_goal' if goal_pose else 'desired_goal'
         return move_cube.Pose.from_dict(observation[key])
 
-    def get_waypoints(self, platform, observation):
+    def set_waypoints(self, platform, observation):
         self.platform = platform
         self.custom_pinocchio_utils = CustomPinocchioUtils(platform.simfinger.finger_urdf_path, platform.simfinger.tip_link_names)
         self.x_soln, self.l_wf_soln, self.cp_params = control_trifinger_platform.run_traj_opt(
                 platform, self.custom_pinocchio_utils, self.x0, self.x_goal, self.nGrid, self.dt, self.save_dir)
-        self.pre_traj_waypoint_i = 0
-        self.traj_waypoint_i = 0
         self.goal_reached = False
 
         custom_pinocchio_utils = self.custom_pinocchio_utils
@@ -94,19 +92,19 @@ class ImpedenceControllerPolicy:
             tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[f_i]
             waypoints = get_waypoints_to_cp_param(obj_pose, self.cube_half_size, tip_current, self.cp_params[f_i])
             self.finger_waypoints_list.append(waypoints)
+        self.pre_traj_waypoint_i = 0
+        self.traj_waypoint_i = 0
         self.goal_reached = False
 
     def predict(self, observation):
         observation = observation['observation']
         current_position, current_velocity = observation['position'], observation['velocity']
-        finger_waypoints_list = self.finger_waypoints_list
-        custom_pinocchio_utils = self.custom_pinocchio_utils
 
         if self.pre_traj_waypoint_i < len(self.finger_waypoints_list[0]):
             # Get fingertip goals from finger_waypoints_list
             fingertip_goal_list = []
             for f_i in range(3):
-                fingertip_goal_list.append(finger_waypoints_list[f_i][self.pre_traj_waypoint_i])
+                fingertip_goal_list.append(self.finger_waypoints_list[f_i][self.pre_traj_waypoint_i])
             tol = 0.009
             tip_forces_wf = None
         # Follow trajectory to lift object
@@ -132,10 +130,11 @@ class ImpedenceControllerPolicy:
                                           fingertip_goal_list,
                                           current_position,
                                           current_velocity,
-                                          custom_pinocchio_utils,
+                                          self.custom_pinocchio_utils,
                                           tip_forces_wf = tip_forces_wf,
                                           tol           = tol
                                           )
+        torque = np.clip(torque, self.action_space.low, self.action_space.high)
 
         if self.goal_reached:
             self.goal_reached = False

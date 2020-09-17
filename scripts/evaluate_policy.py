@@ -25,6 +25,7 @@ evaluate the actual performance of the policy.
 import sys
 
 import gym
+import numpy as np
 
 from rrc_simulation.gym_wrapper.envs import cube_env
 from rrc_simulation.tasks import move_cube
@@ -57,8 +58,10 @@ def main():
         sys.exit(1)
 
     # the poses are passes as JSON strings, so they need to be converted first
-    initial_pose = move_cube.Pose.from_json(initial_pose_json)
-    goal_pose = move_cube.Pose.from_json(goal_pose_json)
+    # initial_pose = move_cube.Pose.from_json(initial_pose_json)
+    # goal_pose = move_cube.Pose.from_json(goal_pose_json)
+    initial_pose = move_cube.Pose(position=np.array([0,0,0.0325]), orientation=np.array([0,0,0,1]))
+    goal_pose =  move_cube.Pose(position=np.array([0,0,0.0825]), orientation=np.array([0,0,0,1]))
 
     # create a FixedInitializer with the given values
     initializer = cube_env.FixedInitializer(
@@ -89,7 +92,7 @@ def main():
     is_done = False
     observation = env.reset()
     if isinstance(policy, ImpedenceControllerPolicy):
-        policy.get_waypoints(env.platform, observation)
+        policy.set_waypoints(env.platform, observation)
     accumulated_reward = 0
     import pdb; pdb.set_trace()
     while not is_done:

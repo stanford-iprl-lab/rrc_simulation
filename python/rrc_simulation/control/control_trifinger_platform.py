@@ -258,12 +258,12 @@ def run_episode(platform, custom_pinocchio_utils,
 
     # Apply torque action
     finger_action = platform.Action(torque=torque)
-    print(finger_action)
     t = platform.append_desired_action(finger_action)
-    time.sleep(platform.get_time_step()*10)
+
+    #time.sleep(platform.get_time_step())
 
   return fingertip_pos_list, x_pos_list, x_quat_list, x_goal
-
+  
 """
 PLOTTING
 """
