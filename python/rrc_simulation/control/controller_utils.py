@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from contact_point import ContactPoint
+from .contact_point import ContactPoint
 from rrc_simulation.tasks import move_cube
 
 """

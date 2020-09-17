@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from stable_baselines.common.vec_env import SubprocVecEnv
 from stable_baselines import PPO2
-from stable_baselines.common.policies import MlpPolicy
+from stable_baselines.common.policies import MlpPolicy, MlpLnLstmPolicy
 from stable_baselines.common import set_global_seeds
 from stable_baselines.common.callbacks import CheckpointCallback
 
@@ -34,30 +34,30 @@ if __name__ == "__main__":
     args = vars(parser.parse_args())
     output_path = str(args["output_path"])
 
-    total_time_steps = 80000000
-    validate_every_timesteps = 2000000
+    total_time_steps = 8000000
+    validate_every_timesteps = 200000
     model_path = os.path.join(output_path, "training_checkpoints")
 
     os.makedirs(model_path)
 
     set_global_seeds(0)
-    num_of_active_envs = 20
-    policy_kwargs = dict(layers=[256, 256])
+    num_of_active_envs = 6
+    policy_kwargs = {}  # dict(layers=[256, 256])
     env = get_multi_process_env(num_of_active_envs)
 
     train_configs = {
         "gamma": 0.99,
-        "n_steps": int(120000 / 20),
+        "n_steps": int(120000 / num_of_active_envs),
         "ent_coef": 0.01,
-        "learning_rate": 0.00025,
+        "learning_rate": 0.0003,
         "vf_coef": 0.5,
         "max_grad_norm": 0.5,
-        "nminibatches": 40,
+        "nminibatches": 42,
         "noptepochs": 4,
     }
 
     model = PPO2(
-        MlpPolicy,
+        MlpLnLstmPolicy,
         env,
         _init_setup_model=True,
         policy_kwargs=policy_kwargs,

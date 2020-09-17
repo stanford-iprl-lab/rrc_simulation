@@ -5,3 +5,8 @@ __pycache__
 docs/_build
 
 data/
+
+*.swp
+*.swo
+**/output/
+**/logs/

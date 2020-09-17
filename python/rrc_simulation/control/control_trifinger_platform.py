@@ -20,54 +20,12 @@ from rrc_simulation.control.custom_pinocchio_utils import CustomPinocchioUtils
 from rrc_simulation.control.controller_utils import *
 from rrc_simulation.traj_opt.fixed_contact_point_opt import FixedContactPointOpt
 
-parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument(
-    "--enable-cameras",
-    "-c",
-    action="store_true",
-    help="Enable camera observations.",
-)
-parser.add_argument(
-    "--save_state_log",
-    "-s",
-    action="store_true",
-    help="Save plots of state over episode",
-)
-parser.add_argument(
-    "--save_viz_mp4",
-    "-sv",
-    action="store_true",
-    help="Save MP4 of visualization.",
-)
-parser.add_argument(
-    "--visualize",
-    "-v",
-    action="store_true",
-    help="Visualize with GUI.",
-)
-parser.add_argument(
-    "--iterations",
-    type=int,
-    default=100,
-    help="Number of motions that are performed.",
-)
-parser.add_argument(
-    "--save-action-log",
-    type=str,
-    metavar="FILENAME",
-    help="If set, save the action log to the specified file.",
-)
-
-parser.add_argument("--npz_file")
-
-args = parser.parse_args()
-
 num_fingers = 3
 episode_length = move_cube.episode_length
 #episode_length = 500
 
 DIFFICULTY = 4
-def main():
+def main(args):
   if args.npz_file is not None:
     # Open .npz file and parse
     npzfile   = np.load(args.npz_file)
@@ -383,8 +341,7 @@ def plot_state(save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal, fi
   if args.save_state_log:
     plt.savefig("{}/object_position.png".format(save_dir))
 
-"""
-Get contact point positions in world frame from cp_params
+""" Get contact point positions in world frame from cp_params
 """
 def get_cp_wf_list_from_cp_params(cp_params, cube_pos, cube_quat, cube_half_size):
   # Get contact points in wf
@@ -407,5 +364,48 @@ def _test_hold_initial_state():
     camParams = pybullet.getDebugVisualizerCamera()
     print("cameraDistance={}, cameraYaw={}, cameraPitch={}, cameraTargetPosition={}".format(camParams[-2], camParams[-4], camParams[-3], camParams[-1]))
 
+
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--enable-cameras",
+        "-c",
+        action="store_true",
+        help="Enable camera observations.",
+    )
+    parser.add_argument(
+        "--save_state_log",
+        "-s",
+        action="store_true",
+        help="Save plots of state over episode",
+    )
+    parser.add_argument(
+        "--save_viz_mp4",
+        "-sv",
+        action="store_true",
+        help="Save MP4 of visualization.",
+    )
+    parser.add_argument(
+        "--visualize",
+        "-v",
+        action="store_true",
+        help="Visualize with GUI.",
+    )
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=100,
+        help="Number of motions that are performed.",
+    )
+    parser.add_argument(
+        "--save-action-log",
+        type=str,
+        metavar="FILENAME",
+        help="If set, save the action log to the specified file.",
+    )
+
+    parser.add_argument("--npz_file")
+
+    args = parser.parse_args()
+
+    main(args)
