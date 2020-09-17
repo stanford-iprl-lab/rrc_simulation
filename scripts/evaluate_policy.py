@@ -66,17 +66,19 @@ def main():
     )
 
     # TODO: Replace with your environment if you used a custom one.
+    action_type = cube_env.ActionType.POSITION if difficulty != 2 else cube_env.ActionType.TORQUE
     env = gym.make(
         "rrc_simulation.gym_wrapper:real_robot_challenge_phase_1-v1",
         initializer=initializer,
-        action_type=cube_env.ActionType.POSITION,
+        action_type=action_type,
         visualization=False,
     )
 
     # TODO: Replace this with your model
     # Note: You may also use a different policy for each difficulty level (difficulty)
     if difficulty == 2:
-        policy = ImpedenceControllerPolicy(initial_pose=initial_pose, goal_pose=goal_pose)
+        policy = ImpedenceControllerPolicy(action_space=env.action_space,
+                initial_pose=initial_pose, goal_pose=goal_pose)
     else:
         policy = RandomPolicy(env.action_space)
 
@@ -89,6 +91,7 @@ def main():
     if isinstance(policy, ImpedenceControllerPolicy):
         policy.get_waypoints(env.platform, observation)
     accumulated_reward = 0
+    import pdb; pdb.set_trace()
     while not is_done:
         action = policy.predict(observation)
         observation, reward, is_done, info = env.step(action)

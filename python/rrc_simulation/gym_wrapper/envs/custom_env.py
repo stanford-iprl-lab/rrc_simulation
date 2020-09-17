@@ -78,7 +78,8 @@ class CurriculumInitializer:
         self.final_dist[0] = final_dist
         if self.difficulty == 4:
             self.final_ori = np.roll(self.final_ori, 1)
-            self.final_ori[0] = compute_orientation_error(goal_pose, final_pose, quad=True)
+            self.final_ori[0] = compute_orientation_error(goal_pose, final_pose,
+                                                          difficulty=self.difficulty)
 
         update_level = np.mean(self.final_dist) < DIST_THRESH
         if self.difficulty == 4:
@@ -553,6 +554,10 @@ class DistRewardWrapper(gym.RewardWrapper):
                 target_dist = move_cube._ARENA_RADIUS
         return target_dist
 
+    @property
+    def difficulty(self):
+        return self.unwrapped.initializer.difficulty
+
     def reset(self, **reset_kwargs):
         self._last_action = None
         return super(DistRewardWrapper, self).reset(**reset_kwargs)
@@ -563,10 +568,10 @@ class DistRewardWrapper(gym.RewardWrapper):
         if self.final_step_only and done:
             return observation, reward, done, info
         else:
-            return observation, self.reward(reward), done, info
+            return observation, self.reward(reward, info), done, info
 
-    def reward(self, reward):
-        final_dist = self.compute_goal_dist(self.info)
+    def reward(self, reward, info):
+        final_dist = self.compute_goal_dist(info)
         if self.rew_fn == 'lin':
             rew = self._dist_coef * (1 - final_dist/self.target_dist)
             if self.info['difficulty'] == 4:
@@ -582,7 +587,7 @@ class DistRewardWrapper(gym.RewardWrapper):
         return rew
 
     def get_goal_object_pose(self):
-        goal_pose = self.unwrapped.goal 
+        goal_pose = self.unwrapped.goal
         if not isinstance(goal_pose, move_cube.Pose):
             goal_pose = move_cube.Pose.from_dict(goal_pose)
         cube_state = self.unwrapped.platform.cube.get_state()
@@ -594,7 +599,7 @@ class DistRewardWrapper(gym.RewardWrapper):
     def compute_orientation_error(self, scale=True):
         goal_pose, object_pose = self.get_goal_object_pose()
         orientation_error = compute_orientation_error(goal_pose, object_pose,
-                                                      scale=scale, quad=True)
+                                                      scale=scale, difficulty=self.difficulty)
         return orientation_error
 
     def compute_goal_dist(self, info):
@@ -673,9 +678,18 @@ class LogInfoWrapper(gym.Wrapper):
         return o, r, d, i
 
 
-def compute_orientation_error(goal_pose, actual_pose, scale=False, quad=False):
-    goal_rot = Rotation.from_quat(goal_pose.orientation)
-    actual_rot = Rotation.from_quat(actual_pose.orientation)
+def compute_orientation_error(goal_pose, actual_pose, scale=False, difficulty=2):
+    yaw_only = quad = difficulty != 4
+    if yaw_only:
+        goal_ori = Rotation.from_quat(goal_pose.orientation).as_euler('xyz')
+        goal_ori[:2] = 0
+        goal_rot = Rotation.from_euler('xyz', goal_ori)
+        actual_ori = Rotation.from_quat(actual_pose.orientation).as_euler('xyz')
+        actual_ori[:2] = 0
+        actual_rot = Rotation.from_euler('xyz', actual_ori)
+    else:
+        goal_rot = Rotation.from_quat(goal_pose.orientation)
+        actual_rot = Rotation.from_quat(actual_pose.orientation)
     error_rot = goal_rot.inv() * actual_rot
     orientation_error = error_rot.magnitude()
     # computes orientation error symmetric to 4 quadrants of the cube

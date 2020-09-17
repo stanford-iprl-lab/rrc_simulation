@@ -11,11 +11,14 @@ from rrc_simulation import trifinger_platform, sample, visual_objects
 from rrc_simulation.control import control_trifinger_platform
 from rrc_simulation.control.custom_pinocchio_utils import CustomPinocchioUtils
 from rrc_simulation.control.controller_utils import *
+from rrc_simulation.gym_wrapper.envs.custom_env import reset_camera
 from rrc_simulation.traj_opt.fixed_contact_point_opt import FixedContactPointOpt
 
 
 class ImpedenceControllerPolicy:
-    def __init__(self, npz_file=None, initial_pose=None, goal_pose=None):
+    def __init__(self, action_space=None, initial_pose=None, goal_pose=None,
+                 npz_file=None):
+        self.action_space = action_space
         if npz_file is not None:
             self.load_npz(npz_file)
         else:
@@ -26,7 +29,9 @@ class ImpedenceControllerPolicy:
             self.dt = 0.05
         self.x0_pos = self.x0[0,0:3]
         self.x0_quat = self.x0[0,3:]
-        print(f'init position: {initial_pose.position}, goal position: {goal_pose.position}')
+        init_goal_dist = np.linalg.norm(goal_pose.position - initial_pose.position)
+        print(f'init position: {initial_pose.position}, goal position: {goal_pose.position}, '
+              f'dist: {init_goal_dist}')
         print(f'init orientation: {initial_pose.orientation}, goal orientation: {goal_pose.orientation}')
         self.setup_logging()
 
@@ -51,6 +56,10 @@ class ImpedenceControllerPolicy:
         self.dt        = npzfile["dt"]
         self.cp_params = npzfile["cp_params"]
 
+    def get_pose_from_observation(self, observation, goal_pose=False):
+        key = 'achieved_goal' if goal_pose else 'desired_goal'
+        return move_cube.Pose.from_dict(observation[key])
+
     def get_waypoints(self, platform, observation):
         self.platform = platform
         self.custom_pinocchio_utils = CustomPinocchioUtils(platform.simfinger.finger_urdf_path, platform.simfinger.tip_link_names)
@@ -63,13 +72,10 @@ class ImpedenceControllerPolicy:
         custom_pinocchio_utils = self.custom_pinocchio_utils
         cube_half_size = move_cube._CUBE_WIDTH/2 + 0.008 # Fudge the cube dimensions slightly for computing contact point positions in world frame to account for fingertip radius
 
-        pybullet.resetDebugVisualizerCamera(cameraDistance=1.54, cameraYaw=4.749999523162842, cameraPitch=-42.44065475463867, cameraTargetPosition=(-0.11500892043113708, 0.6501579880714417, -0.6364855170249939))
+        reset_camera()
 
-# Take first action
-        finger_action = self.platform.Action(position=platform.spaces.robot_position.default)
-        t = platform.append_desired_action(finger_action)
 # Get object pose
-        obj_pose = platform.get_object_pose(t)
+        obj_pose = self.get_pose_from_observation(observation)
 
 # Visual markers
         init_cps = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
@@ -80,7 +86,7 @@ class ImpedenceControllerPolicy:
         init_cps.set_state(target_cps_wf)
 
 # Get initial fingertip positions in world frame
-        current_position = platform.get_robot_observation(t).position
+        current_position = observation['observation']['position']
 
 # Get initial contact points and waypoints to them
         self.finger_waypoints_list = []
