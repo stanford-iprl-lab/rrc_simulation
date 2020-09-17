@@ -71,7 +71,7 @@ def main():
         "rrc_simulation.gym_wrapper:real_robot_challenge_phase_1-v1",
         initializer=initializer,
         action_type=action_type,
-        visualization=False,
+        visualization=True,
     )
 
     # TODO: Replace this with your model
@@ -91,7 +91,7 @@ def main():
     if isinstance(policy, ImpedenceControllerPolicy):
         policy.get_waypoints(env.platform, observation)
     accumulated_reward = 0
-    import pdb; pdb.set_trace()
+    #import pdb; pdb.set_trace()
     while not is_done:
         action = policy.predict(observation)
         observation, reward, is_done, info = env.step(action)

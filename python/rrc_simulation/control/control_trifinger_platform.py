@@ -38,8 +38,8 @@ def main(args):
     cp_params = npzfile["cp_params"]
 
   else:
-    yaw = 0.6
-    x0     = np.array([[0,0,0.0325,0,0,np.sin(yaw/2),np.cos(yaw/2)]])
+    x0 = np.array([[0.01559624,0.04523149,0.0325,0,0,0.9622262,0.27225125]])
+    yaw = 0
     x_goal = np.array([[0,0,0.05 + 0.0325,0,0,np.sin(yaw/2),np.cos(yaw/2)]]) 
     nGrid = 50
     dt = 0.01

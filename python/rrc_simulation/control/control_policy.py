@@ -25,8 +25,8 @@ class ImpedenceControllerPolicy:
             yaw = 0.
             self.x0 = np.concatenate([initial_pose.position, initial_pose.orientation])[None]
             self.x_goal =  np.concatenate([goal_pose.position, goal_pose.orientation])[None]
-            self.nGrid = 20
-            self.dt = 0.05
+            self.nGrid = 50
+            self.dt = 0.01
         self.x0_pos = self.x0[0,0:3]
         self.x0_quat = self.x0[0,3:]
         init_goal_dist = np.linalg.norm(goal_pose.position - initial_pose.position)
@@ -97,6 +97,7 @@ class ImpedenceControllerPolicy:
         self.goal_reached = False
 
     def predict(self, observation):
+        cube_half_size = move_cube._CUBE_WIDTH/2 + 0.008 # Fudge the cube dimensions slightly for computing contact point positions in world frame to account for fingertip radius
         observation = observation['observation']
         current_position, current_velocity = observation['position'], observation['velocity']
         finger_waypoints_list = self.finger_waypoints_list
@@ -118,7 +119,7 @@ class ImpedenceControllerPolicy:
             fingertip_goal_list = control_trifinger_platform.get_cp_wf_list_from_cp_params(self.cp_params,
                                                                 next_cube_pos_wf,
                                                                 next_cube_quat_wf,
-                                                                self.cube_half_size)
+                                                                cube_half_size)
             # Get target contact forces in world frame 
             tip_forces_wf = self.l_wf_soln[self.traj_waypoint_i, :]
             tol = 0.007
@@ -144,6 +145,14 @@ class ImpedenceControllerPolicy:
             elif self.traj_waypoint_i < self.nGrid:
                 # print("trajectory waypoint: {}".format(self.traj_waypoint_i))
                 self.traj_waypoint_i += 1
-        return torque
+
+        # Clip torque to limits
+        clipped_torque = np.clip(
+                np.asarray(torque),
+                -self.action_space.low[0],
+                +self.action_space.high[0],
+            )
+
+        return clipped_torque
 
 
