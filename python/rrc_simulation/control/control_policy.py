@@ -70,7 +70,7 @@ class ImpedenceControllerPolicy:
         self.goal_reached = False
 
         custom_pinocchio_utils = self.custom_pinocchio_utils
-        cube_half_size = move_cube._CUBE_WIDTH/2 + 0.008 # Fudge the cube dimensions slightly for computing contact point positions in world frame to account for fingertip radius
+        self.cube_half_size = move_cube._CUBE_WIDTH/2 + 0.008 # Fudge the cube dimensions slightly for computing contact point positions in world frame to account for fingertip radius
 
         reset_camera()
 
@@ -82,7 +82,7 @@ class ImpedenceControllerPolicy:
         self.finger_waypoints = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
 
 # Draw target contact points
-        target_cps_wf = control_trifinger_platform.get_cp_wf_list_from_cp_params(self.cp_params, self.x0_pos, self.x0_quat, cube_half_size)
+        target_cps_wf = control_trifinger_platform.get_cp_wf_list_from_cp_params(self.cp_params, self.x0_pos, self.x0_quat, self.cube_half_size)
         init_cps.set_state(target_cps_wf)
 
 # Get initial fingertip positions in world frame
@@ -92,7 +92,7 @@ class ImpedenceControllerPolicy:
         self.finger_waypoints_list = []
         for f_i in range(3):
             tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[f_i]
-            waypoints = get_waypoints_to_cp_param(obj_pose, cube_half_size, tip_current, self.cp_params[f_i])
+            waypoints = get_waypoints_to_cp_param(obj_pose, self.cube_half_size, tip_current, self.cp_params[f_i])
             self.finger_waypoints_list.append(waypoints)
         self.goal_reached = False
 
