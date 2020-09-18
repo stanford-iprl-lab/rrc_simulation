@@ -24,7 +24,7 @@ num_fingers = 3
 episode_length = move_cube.episode_length
 #episode_length = 500
 
-DIFFICULTY = 4
+DIFFICULTY = 2
 def main(args):
   if args.npz_file is not None:
     # Open .npz file and parse
@@ -38,9 +38,24 @@ def main(args):
     cp_params = npzfile["cp_params"]
 
   else:
-    x0 = np.array([[0.01559624,0.04523149,0.0325,0,0,0.9622262,0.27225125]])
-    yaw = 0
-    x_goal = np.array([[0,0,0.05 + 0.0325,0,0,np.sin(yaw/2),np.cos(yaw/2)]]) 
+    x0 = np.array([[-0.13142379, -0.02975238, 0.0325, 0, 0, 0, 1]]) # fail mode
+    
+    x0 = np.array([[-0.1304598,0.00103245,0.0325,0,0,0.01594344,0.9998729]]) # fail mode
+
+    #x0 = np.array([[0.00152466,-0.00121274,0.0325,0,0,0.54988584,-0.83523983]])
+
+    x0 = np.array([[-0.07492457,-0.02548481,0.0325,0,0,0.99868643,0.05123884]]) # fail mode
+
+    #x0 = np.array([[-0.01271084,-0.0073533, 0.0325, 0,0,0.71904392,-0.69496463]]) #-56-
+    #x0 = np.array([[0.09967356474036665, 0.010468222675151151, 0.0325,0,0,0.3760614843238557, 0.9265947118390749]]) # -655
+
+    #x0 = np.array([[0.04609155,0.06770772,0.0325,0,0,0.39757855,0.91756814]]) #-1313
+
+    x0 = np.array([[-0.0590596,0.10763319, 0.0325, 0,0,0.82239008,-0.56892403]])
+
+    x_goal = x0.copy()
+    x_goal[0,0:3] = np.array([0, 0, 0.0825])
+    #x_goal = np.array([[0,0,0.05 + 0.0325,0,0,0,1]]) 
     nGrid = 50
     dt = 0.01
 
@@ -73,7 +88,10 @@ def main(args):
   custom_pinocchio_utils = CustomPinocchioUtils(platform.simfinger.finger_urdf_path, platform.simfinger.tip_link_names) 
   
   if args.npz_file is None:
-    x_soln, l_wf_soln, cp_params = run_traj_opt(platform, custom_pinocchio_utils, x0, x_goal, nGrid, dt, save_dir)
+    obj_pose = platform.get_object_pose(0)
+    current_position = platform.get_robot_observation(0).position
+    x_soln, l_wf_soln, cp_params = run_traj_opt(obj_pose, current_position, custom_pinocchio_utils, x0, x_goal, nGrid, dt, save_dir)
+    #x_soln, l_wf_soln, cp_params = run_traj_opt(platform, custom_pinocchio_utils, x0, x_goal, nGrid, dt, save_dir)
 
   fingertip_pos_list, x_pos_list, x_quat_list, x_goal, fingertip_goal_list = run_episode(platform,
                                                                               custom_pinocchio_utils,
@@ -91,8 +109,6 @@ def main(args):
 Given intial state, run trajectory optimization
 """
 def run_traj_opt(obj_pose, current_position, custom_pinocchio_utils, x0, x_goal, nGrid, dt, save_dir):
-  # obj_pose = platform.get_object_pose(0)
-  # current_position = platform.get_robot_observation(0).position
   init_fingertip_pos_list = [[],[],[]] # Containts 3 lists, one for each finger
   for finger_id in range(3):
     tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[finger_id]
@@ -178,12 +194,12 @@ def run_episode(platform, custom_pinocchio_utils,
   obj_pose = platform.get_object_pose(t)
 
   # Visual markers
-  init_cps = visual_objects.Marker(number_of_goals=num_fingers, goal_size=0.008)
-  finger_waypoints = visual_objects.Marker(number_of_goals=num_fingers, goal_size=0.008)
+  #init_cps = visual_objects.Marker(number_of_goals=num_fingers, goal_size=0.008)
+  #finger_waypoints = visual_objects.Marker(number_of_goals=num_fingers, goal_size=0.008)
 
   # Draw target contact points
   target_cps_wf = get_cp_wf_list_from_cp_params(cp_params, x0_pos, x0_quat, cube_half_size)
-  init_cps.set_state(target_cps_wf)
+  #init_cps.set_state(target_cps_wf)
 
   # Get initial fingertip positions in world frame
   current_position = platform.get_robot_observation(t).position
@@ -191,6 +207,7 @@ def run_episode(platform, custom_pinocchio_utils,
   # Get initial contact points and waypoints to them
   finger_waypoints_list = []
   for f_i in range(3):
+    #print("finger {}".format(f_i))
     tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[f_i]
     waypoints = get_waypoints_to_cp_param(obj_pose, cube_half_size, tip_current, cp_params[f_i])
     finger_waypoints_list.append(waypoints)
@@ -214,6 +231,7 @@ def run_episode(platform, custom_pinocchio_utils,
       fingertip_goal_list = []
       for f_i in range(num_fingers):
         fingertip_goal_list.append(finger_waypoints_list[f_i][pre_traj_waypoint_i])
+      #print(fingertip_goal_list)
       tol = 0.009
       tip_forces_wf = None
     # Follow trajectory to lift object
@@ -230,7 +248,7 @@ def run_episode(platform, custom_pinocchio_utils,
       tip_forces_wf = l_wf_soln[traj_waypoint_i, :]
       tol = 0.008
     
-    finger_waypoints.set_state(fingertip_goal_list)
+    #finger_waypoints.set_state(fingertip_goal_list)
 
     torque, goal_reached = impedance_controller(
                                   fingertip_goal_list,

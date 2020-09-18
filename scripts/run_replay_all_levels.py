@@ -98,7 +98,8 @@ def main():
             )
             sys.exit(1)
 
-        levels = (1, 2, 3, 4)
+        #levels = (1, 2, 3, 4)
+        levels = (2,)
 
         # load samples
         sample_file = os.path.join(args.input_directory, "test_data.p")

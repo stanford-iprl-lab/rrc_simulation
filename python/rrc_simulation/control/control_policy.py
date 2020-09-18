@@ -82,28 +82,31 @@ class ImpedanceControllerPolicy:
 
         # Get initial fingertip positions in world frame
         current_position, _ = self.get_robot_position_velocity(observation)
+
         self.x_soln, self.l_wf_soln, self.cp_params = control_trifinger_platform.run_traj_opt(
                 obj_pose, current_position, self.custom_pinocchio_utils, self.x0, self.x_goal, self.nGrid, self.dt, self.save_dir)
         self.goal_reached = False
 
-        custom_pinocchio_utils = self.custom_pinocchio_utils
         # Fudge the cube dimensions slightly for computing contact point positions in world frame to account for fingertip radius
         self.cube_half_size = move_cube._CUBE_WIDTH/2 + 0.008
 
         reset_camera()
 
+        # Get object pose
+        obj_pose = self.get_pose_from_observation(observation)
+
         # Visual markers
-        init_cps = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
-        self.finger_waypoints = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
+        #init_cps = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
+        #self.finger_waypoints = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
 
         # Draw target contact points
         target_cps_wf = control_trifinger_platform.get_cp_wf_list_from_cp_params(self.cp_params, self.x0_pos, self.x0_quat, self.cube_half_size)
-        init_cps.set_state(target_cps_wf)
+        #init_cps.set_state(target_cps_wf)
 
         # Get initial contact points and waypoints to them
         self.finger_waypoints_list = []
         for f_i in range(3):
-            tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[f_i]
+            tip_current = self.custom_pinocchio_utils.forward_kinematics(current_position)[f_i]
             waypoints = get_waypoints_to_cp_param(obj_pose, self.cube_half_size, tip_current, self.cp_params[f_i])
             self.finger_waypoints_list.append(waypoints)
         self.pre_traj_waypoint_i = 0
@@ -112,9 +115,8 @@ class ImpedanceControllerPolicy:
 
     def predict(self, observation):
         self.step_count += 1
-        if self.step_count == 1:
-            return np.zeros_like(self.action_space.low)
-        current_position, current_velocity = self.get_robot_position_velocity(observation)
+        observation = observation['observation']
+        current_position, current_velocity = observation['position'], observation['velocity']
 
         if self.pre_traj_waypoint_i < len(self.finger_waypoints_list[0]):
             # Get fingertip goals from finger_waypoints_list
@@ -138,7 +140,7 @@ class ImpedanceControllerPolicy:
             self.tip_forces_wf = self.l_wf_soln[self.traj_waypoint_i, :]
             self.tol = 0.007
 
-        self.finger_waypoints.set_state(self.fingertip_goal_list)
+        #self.finger_waypoints.set_state(self.fingertip_goal_list)
         # currently, torques are not limited to same range as what is used by simulator
         # torque commands are breaking limits for initial and final goal poses that require 
         # huge distances are covered in a few waypoints? Assign # waypoints wrt distance between
