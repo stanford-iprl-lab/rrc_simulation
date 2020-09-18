@@ -24,7 +24,10 @@ class ImpedenceControllerPolicy:
         else:
             yaw = 0.
             self.x0 = np.concatenate([initial_pose.position, initial_pose.orientation])[None]
-            self.x_goal =  np.concatenate([goal_pose.position, goal_pose.orientation])[None]
+            # Hardcode orientation of goal to always be identity quaternion
+            self.x_goal = self.x0.copy()
+            self.x_goal[0,0:3] = goal_pose.position
+            #self.x_goal =  np.concatenate([goal_pose.position, goal_pose.orientation])[None]
             self.nGrid = 50
             self.dt = 0.01
         self.x0_pos = self.x0[0,0:3]
@@ -62,10 +65,11 @@ class ImpedenceControllerPolicy:
 
     def set_waypoints(self, platform, observation):
         self.step_count = 0
-        self.platform = platform
+        obj_pose = self.get_pose_from_observation(observation)
+        current_position = observation['observation']['position']
         self.custom_pinocchio_utils = CustomPinocchioUtils(platform.simfinger.finger_urdf_path, platform.simfinger.tip_link_names)
         self.x_soln, self.l_wf_soln, self.cp_params = control_trifinger_platform.run_traj_opt(
-                platform, self.custom_pinocchio_utils, self.x0, self.x_goal, self.nGrid, self.dt, self.save_dir)
+                obj_pose, current_position, self.custom_pinocchio_utils, self.x0, self.x_goal, self.nGrid, self.dt, self.save_dir)
         self.goal_reached = False
 
         custom_pinocchio_utils = self.custom_pinocchio_utils
@@ -77,12 +81,12 @@ class ImpedenceControllerPolicy:
         obj_pose = self.get_pose_from_observation(observation)
 
 # Visual markers
-        init_cps = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
-        self.finger_waypoints = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
+        #init_cps = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
+        #self.finger_waypoints = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
 
 # Draw target contact points
         target_cps_wf = control_trifinger_platform.get_cp_wf_list_from_cp_params(self.cp_params, self.x0_pos, self.x0_quat, self.cube_half_size)
-        init_cps.set_state(target_cps_wf)
+        #init_cps.set_state(target_cps_wf)
 
 # Get initial fingertip positions in world frame
         current_position = observation['observation']['position']
@@ -99,8 +103,6 @@ class ImpedenceControllerPolicy:
 
     def predict(self, observation):
         self.step_count += 1
-        if self.step_count == 1:
-            return np.zeros_like(self.action_space.low)
         observation = observation['observation']
         current_position, current_velocity = observation['position'], observation['velocity']
 
@@ -126,7 +128,7 @@ class ImpedenceControllerPolicy:
             self.tip_forces_wf = self.l_wf_soln[self.traj_waypoint_i, :]
             self.tol = 0.007
 
-        self.finger_waypoints.set_state(self.fingertip_goal_list)
+        #self.finger_waypoints.set_state(self.fingertip_goal_list)
         # currently, torques are not limited to same range as what is used by simulator
         # torque commands are breaking limits for initial and final goal poses that require 
         # huge distances are covered in a few waypoints? Assign # waypoints wrt distance between
