@@ -213,6 +213,22 @@ For now, don't worry about z-axis, just care about xy plane
 """
 def get_initial_cp_params(obj_pose, fingertip_pos_list):
   # Transform finger tip positions to object frame
+  
+  # Here, hard code the base position of the fingers (as angle on the arena)
+  r = 0.15
+  theta_0 = np.pi/2 # 90 degrees
+  theta_1 = -np.pi/3 # 330 degrees
+  theta_2 = 3.66519 # 210 degrees
+
+  fingertip_pos_list[0][0][0] = np.cos(theta_0)*r
+  fingertip_pos_list[1][0][0] = np.cos(theta_1)*r
+  fingertip_pos_list[2][0][0] = np.cos(theta_2)*r
+
+  fingertip_pos_list[0][0][1] = np.sin(theta_0)*r 
+  fingertip_pos_list[1][0][1] = np.sin(theta_1)*r 
+  fingertip_pos_list[2][0][1] = np.sin(theta_2)*r 
+  #print(fingertip_pos_list)
+
   fingertip_pos_list_of = []
   for f_wf in fingertip_pos_list:
     f_of = get_of_from_wf(f_wf, obj_pose)
@@ -276,7 +292,6 @@ def get_initial_cp_params(obj_pose, fingertip_pos_list):
       #print("random")
       #print(xy_distances[curr_finger_id, :])
       face = free_faces[0] 
-
     assigned_faces[curr_finger_id] = face 
 
     # Replace row with -np.inf so we can assign other fingers
@@ -300,8 +315,6 @@ def get_initial_cp_params(obj_pose, fingertip_pos_list):
     elif face == 5:
       param = [-1, 0, z]
     cp_params.append(param)
-
-  print("Assigned faces: {}".format(assigned_faces))
   return cp_params
 
 """
@@ -375,7 +388,7 @@ def get_waypoints_to_cp_param(obj_pose, cube_half_size, fingertip_pos, cp_param)
 
   #return waypoints_wf
   # Add intermediate waypoints
-  interp_num = 6
+  interp_num = 10
   waypoints_final = []
   for i in range(len(waypoints_wf) - 1):
     curr_w = waypoints_wf[i]
