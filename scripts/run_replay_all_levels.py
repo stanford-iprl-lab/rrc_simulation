@@ -96,7 +96,8 @@ def main():
             )
             sys.exit(1)
 
-        levels = (1, 2, 3, 4)
+        #levels = (1, 2, 3, 4)
+        levels = (2,)
 
         # load samples
         sample_file = os.path.join(args.input_directory, "test_data.p")
@@ -106,6 +107,9 @@ def main():
         # run "replay_action_log.py" for each sample
         level_rewards = {level: [] for level in levels}
         for sample in test_data:
+            #if sample.iteration != 7: continue
+            print(sample.init_pose_json)
+            print(sample.goal_pose_json)
             print(
                 "Replay level {} sample {}".format(
                     sample.difficulty, sample.iteration
