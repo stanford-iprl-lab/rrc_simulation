@@ -1,2 +1,2 @@
 export PYTHONNOUSERSITE=True
-pyenv activate miniconda3-latest/envs/rrc
+conda activate rrc_simulation

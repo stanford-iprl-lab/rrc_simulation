@@ -22,7 +22,9 @@ from rrc_simulation.traj_opt.fixed_contact_point_opt import FixedContactPointOpt
 
 num_fingers = 3
 episode_length = move_cube.episode_length
+#episode_length = 500
 
+DIFFICULTY = 4
 def main(args):
   if args.npz_file is not None:
     # Open .npz file and parse
@@ -36,11 +38,11 @@ def main(args):
     cp_params = npzfile["cp_params"]
 
   else:
-    yaw = -0.2
-    x_goal = np.array([[0,0,0.1+0.0325,0,0,np.cos(yaw/2),np.sin(yaw/2)]]) # 10 cm lift
-    x0        = np.array([[0,0,0.0325,0,0,np.cos(yaw/2),np.sin(yaw/2)]])
-    nGrid = 20
-    dt = 0.05
+    x0 = np.array([[0.01559624,0.04523149,0.0325,0,0,0.9622262,0.27225125]])
+    yaw = 0
+    x_goal = np.array([[0,0,0.05 + 0.0325,0,0,np.sin(yaw/2),np.cos(yaw/2)]]) 
+    nGrid = 50
+    dt = 0.01
 
   # Save directory
   x_goal_str = "-".join(map(str,x_goal[0,:].tolist()))
@@ -73,19 +75,17 @@ def main(args):
   if args.npz_file is None:
     x_soln, l_wf_soln, cp_params = run_traj_opt(platform, custom_pinocchio_utils, x0, x_goal, nGrid, dt, save_dir)
 
-  #quit()
+  fingertip_pos_list, x_pos_list, x_quat_list, x_goal, fingertip_goal_list = run_episode(platform,
+                                                                              custom_pinocchio_utils,
+                                                                              nGrid,
+                                                                              x0,
+                                                                              x_goal,
+                                                                              x_soln,
+                                                                              l_wf_soln,
+                                                                              cp_params,
+                                                                              )
 
-  fingertip_pos_list, x_pos_list, x_quat_list, x_goal = run_episode(platform,
-                                                                    custom_pinocchio_utils,
-                                                                    nGrid,
-                                                                    x0,
-                                                                    x_goal,
-                                                                    x_soln,
-                                                                    l_wf_soln,
-                                                                    cp_params,
-                                                                    )
-
-  plot_state(save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal)
+  plot_state(save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal,fingertip_goal_list)
 
 """
 Given intial state, run trajectory optimization
@@ -155,6 +155,7 @@ def run_episode(platform, custom_pinocchio_utils,
 
   # Lists for storing values to plot
   fingertip_pos_list = [[],[],[]] # Containts 3 lists, one for each finger
+  fingertip_goal_log = [[],[],[]] # Containts 3 lists, one for each finger
   x_pos_list = [] # Object positions
   x_quat_list = [] # Object positions
 
@@ -197,6 +198,9 @@ def run_episode(platform, custom_pinocchio_utils,
   pre_traj_waypoint_i = 0
   traj_waypoint_i = 0
   goal_reached = False
+  reward = 0
+  goal_pose = move_cube.Pose(position=x_goal[0,0:3], orientation=x_goal[0,3:])
+
   for timestep in tqdm(range(episode_length)):
 
     # Get joint positions        
@@ -224,7 +228,7 @@ def run_episode(platform, custom_pinocchio_utils,
                                                           cube_half_size)
       # Get target contact forces in world frame 
       tip_forces_wf = l_wf_soln[traj_waypoint_i, :]
-      tol = 0.007
+      tol = 0.008
     
     finger_waypoints.set_state(fingertip_goal_list)
 
@@ -251,27 +255,52 @@ def run_episode(platform, custom_pinocchio_utils,
     for finger_id in range(3):
       tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[finger_id]
       fingertip_pos_list[finger_id].append(tip_current)
+      fingertip_goal_log[finger_id].append(fingertip_goal_list[finger_id])
     # Add current object pose to list
     obj_pose = platform.get_object_pose(t)
     x_pos_list.append(obj_pose.position)
     x_quat_list.append(obj_pose.orientation)
 
+    # Accumulate reward
+    r = -move_cube.evaluate_state(
+            goal_pose,
+            obj_pose,
+            DIFFICULTY,
+        )
+    reward += r
+  
+    clipped_torque = np.clip(
+            np.asarray(torque),
+            -platform._max_torque_Nm,
+            +platform._max_torque_Nm,
+        )
+    # Check torque limits
+    #print("Torque upper limits: {}".format(platform.spaces.robot_torque))
+    if not platform.spaces.robot_torque.gym.contains(clipped_torque):
+      print("Time {} Actual torque: {}".format(t, clipped_torque))
+    #if not platform.spaces.robot_position.gym.contains(current_position):
+    #  print("Actual position: {}".format(current_position))
+
     # Apply torque action
-    finger_action = platform.Action(torque=torque)
+    finger_action = platform.Action(torque=clipped_torque)
     t = platform.append_desired_action(finger_action)
 
     #time.sleep(platform.get_time_step())
 
-  return fingertip_pos_list, x_pos_list, x_quat_list, x_goal
+  # Compute score
+  print("Reward: {}".format(reward))
+
+  return fingertip_pos_list, x_pos_list, x_quat_list, x_goal, fingertip_goal_log
   
 """
 PLOTTING
 """
-def plot_state(save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal):
+def plot_state(save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal, fingertip_goal_list):
   total_timesteps = episode_length
 
   # Plot end effector trajectory
   fingertip_pos_array = np.array(fingertip_pos_list)
+  fingertip_goal_array = np.array(fingertip_goal_list)
   x_pos_array = np.array(x_pos_list)
   x_quat_array = np.array(x_quat_list)
 
@@ -284,9 +313,9 @@ def plot_state(save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal):
     plt.plot(list(range(total_timesteps)), fingertip_pos_array[i,:,0], c="C0", label="x")
     plt.plot(list(range(total_timesteps)), fingertip_pos_array[i,:,1], c="C1", label="y")
     plt.plot(list(range(total_timesteps)), fingertip_pos_array[i,:,2], c="C2", label="z")
-    #plt.plot(list(range(total_timesteps)), np.ones(total_timesteps)*fingertip_goal_list[i][0], ":", c="C0", label="x_goal")
-    #plt.plot(list(range(total_timesteps)), np.ones(total_timesteps)*fingertip_goal_list[i][1], ":", c="C1", label="y_goal")
-    #plt.plot(list(range(total_timesteps)), np.ones(total_timesteps)*fingertip_goal_list[i][2], ":", c="C2", label="z_goal")
+    plt.plot(list(range(total_timesteps)), fingertip_goal_array[i,:,0], ":", c="C0", label="x_goal")
+    plt.plot(list(range(total_timesteps)), fingertip_goal_array[i,:,1], ":", c="C1", label="y_goal")
+    plt.plot(list(range(total_timesteps)), fingertip_goal_array[i,:,2], ":", c="C2", label="z_goal")
   plt.legend()
   if args.save_state_log:
     plt.savefig("{}/fingertip_positions.png".format(save_dir))

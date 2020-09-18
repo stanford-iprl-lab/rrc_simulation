@@ -79,7 +79,7 @@ def main():
         "rrc_simulation.gym_wrapper:real_robot_challenge_phase_1-v1",
         initializer=initializer,
         action_type=action_type,
-        visualization=False,
+        visualization=True,
     )
 
     # TODO: Replace this with your model

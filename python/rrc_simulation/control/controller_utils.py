@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.spatial.transform import Rotation
+from scipy.spatial.distance import pdist, squareform
 
 from .contact_point import ContactPoint
 from rrc_simulation.tasks import move_cube
@@ -63,7 +64,8 @@ def impedance_controller_single_finger(
   Kp_y = 200
   Kp_z = 400
   Kp = np.diag([Kp_x, Kp_y, Kp_z])
-  Kv_x = Kv_y = 7
+  Kv_x = 7
+  Kv_y = 7
   Kv_z = 7
   Kv = np.diag([Kv_x, Kv_y, Kv_z])
 
@@ -166,6 +168,44 @@ def get_of_from_wf(p, obj_pose):
 
   return rotation_inv.apply(p) + translation_inv
 
+def get_initial_cp_params_k(obj_pose, fingertip_pos):
+  corners = move_cube.get_cube_corner_positions(obj_pose)
+  p1 = corners[:4].mean(axis=0)
+  p2 = corners[-4:].mean(axis=0)
+  p3 = np.concatenate([corners[:2], corners[4:6]]).mean(axis=0)
+  p4 = np.concatenate([corners[2:4], corners[6:]]).mean(axis=0)
+  centers = np.array([p1, p2, p3, p4])
+  ft_centers = np.concatenate([fingertip_pos, centers], axis=0)
+
+  # rows: fingers
+  # columns: faces
+  dists = squareform(pdist(ft_centers))[:3, 3:]
+  closest_face_idx = np.argmin(dists, axis=0)
+  closest_face_pos = centers[closest_face_idx]
+    
+  print(dists)
+  print(closest_face_idx)
+  assigned_faces = closest_face_idx
+
+  cp_params = []
+  z = 0
+  for i in range(3):
+    face = assigned_faces[i]
+    if face == 1:
+      param = [0, -1, z]
+    elif face == 2:
+      param = [0, 1, z]
+    elif face == 3:
+      param = [1, 0, z]
+    elif face == 5:
+      param = [-1, 0, z]
+    cp_params.append(param)
+
+  print(assigned_faces)
+  return cp_params
+
+  #quit()
+
 """
 Get initial contact points on cube
 Assign closest cube face to each finger
@@ -200,6 +240,7 @@ def get_initial_cp_params(obj_pose, fingertip_pos_list):
     curr_finger_id = max_ind[0] 
     furthest_axis = max_ind[1]
 
+    #print("current finger {}".format(curr_finger_id))
     # Do the assignment
     x_dist = xy_distances[curr_finger_id, 0]
     y_dist = xy_distances[curr_finger_id, 1]
@@ -213,11 +254,12 @@ def get_initial_cp_params(obj_pose, fingertip_pos_list):
         face = 3
       else:
         face = 5
+    #print("first choice face: {}".format(face))
 
     # Handle faces that may already be assigned
     if face not in free_faces:
       alternate_axis = abs(furthest_axis - 1)
-      if furthest_axis == 0: # distance to x axis is greater than to y axis
+      if alternate_axis == 0:
         if fingertip_pos_list_of[curr_finger_id][0, 1] > 0:
           face = 2
         else:
@@ -227,9 +269,12 @@ def get_initial_cp_params(obj_pose, fingertip_pos_list):
           face = 3
         else:
           face = 5
+      #print("second choice face: {}".format(face))
     
     # If backup face isn't free, assign random face from free_faces
     if face not in free_faces:
+      #print("random")
+      #print(xy_distances[curr_finger_id, :])
       face = free_faces[0] 
 
     assigned_faces[curr_finger_id] = face 
@@ -238,6 +283,8 @@ def get_initial_cp_params(obj_pose, fingertip_pos_list):
     xy_distances[curr_finger_id, :] = -np.inf
     # Remove face from free_faces
     free_faces.remove(face)
+
+    #print("Finger {} Assigned face: {}".format(curr_finger_id, face))
 
   # Set contact point params
   cp_params = []
@@ -254,7 +301,7 @@ def get_initial_cp_params(obj_pose, fingertip_pos_list):
       param = [-1, 0, z]
     cp_params.append(param)
 
-  print(assigned_faces)
+  print("Assigned faces: {}".format(assigned_faces))
   return cp_params
 
 """
@@ -292,7 +339,7 @@ def get_waypoints_to_cp_param(obj_pose, cube_half_size, fingertip_pos, cp_param)
   cp_pos_of = cp.pos_of
 
   waypoints = []
-  tol = 0.09
+  tol = 0.05
 
   # Get the non-zero cp_param dimension (to determine which face the contact point is on)
   # This works because we assume z is always 0, and either x or y is 0
@@ -301,9 +348,14 @@ def get_waypoints_to_cp_param(obj_pose, cube_half_size, fingertip_pos, cp_param)
 
   # Work with absolute values, and then correct sign at the end
   w = np.expand_dims(fingertip_pos_of,0)
-  w[0,2] = 0.07 # Bring fingers lower, to avoid links colliding with each other
-  if abs(fingertip_pos_of[non_zero_dim]) < abs(cp_pos_of[non_zero_dim] + tol):
+  #print(w)
+  #print(cp_pos_of)
+  w[0,2] = 0.06 # Bring fingers lower, to avoid links colliding with each other
+  if abs(fingertip_pos_of[non_zero_dim]) < abs(cp_pos_of[non_zero_dim]) + tol:
     w[0,non_zero_dim] = cp_param[non_zero_dim] * (abs(cp_pos_of[non_zero_dim]) + tol) # fix sign
+  if abs(fingertip_pos_of[zero_dim]) < abs(cp_pos_of[zero_dim]) + tol:
+    w[0,zero_dim] = cp_param[zero_dim] * (abs(cp_pos_of[zero_dim]) + tol) # fix sign
+  #print(w)
   waypoints.append(w.copy())
 
   # Align zero_dim 
@@ -313,11 +365,27 @@ def get_waypoints_to_cp_param(obj_pose, cube_half_size, fingertip_pos, cp_param)
   #w[0,non_zero_dim] = cp_pos_of[non_zero_dim]
   #w[0,2] = 0
   #waypoints.append(w.copy())
+  waypoints.append(cp_pos_of)
 
   # Transform waypoints from object frame to world frame
   waypoints_wf = []
+  #waypoints_wf.append(fingertip_pos)
   for wp in waypoints:
     waypoints_wf.append(np.squeeze(get_wf_from_of(wp, obj_pose)))
-  
-  return waypoints_wf
+
+  #return waypoints_wf
+  # Add intermediate waypoints
+  interp_num = 6
+  waypoints_final = []
+  for i in range(len(waypoints_wf) - 1):
+    curr_w = waypoints_wf[i]
+    next_w = waypoints_wf[i+1] 
+
+    interp_pts = np.linspace(curr_w, next_w, interp_num)
+    for r in range(interp_num):
+      waypoints_final.append(interp_pts[r])
+
+  waypoints_final.pop(-1)
+
+  return waypoints_final
 
