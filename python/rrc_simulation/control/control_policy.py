@@ -157,7 +157,7 @@ class ImpedanceControllerPolicy:
 
     
 class HierarchicalControllerPolicy(ImpedanceControllerPolicy):
-    DIST_THRESH = 0.08
+    DIST_THRESH = 0.09
     ORI_THRESH = np.pi / 6
     default_robot_position = trifinger_platform.TriFingerPlatform.spaces.robot_position.default
 
@@ -179,7 +179,7 @@ class HierarchicalControllerPolicy(ImpedanceControllerPolicy):
             self.rl_frameskip = self.rl_env.frameskip
         else:
             self.rl_frameskip = 10
-        self.observation_names = self.rl_env.unwrapped.observation_names
+        self.observation_names = list(self.rl_env.unwrapped.observation_space.spaces.keys())
         self.rl_observation_space = self.rl_env.observation_space
         print('loaded policy from {}'.format(load_dir))
     
