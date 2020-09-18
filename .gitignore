@@ -10,3 +10,5 @@ data/
 *.swo
 **/output/
 **/logs/
+
+**/.ipynb_checkpoints/

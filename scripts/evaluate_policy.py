@@ -27,9 +27,10 @@ import sys
 import gym
 import numpy as np
 
-from rrc_simulation.gym_wrapper.envs import cube_env
+from rrc_simulation.gym_wrapper.envs import cube_env, control_env
 from rrc_simulation.tasks import move_cube
-from rrc_simulation.control.control_policy import ImpedenceControllerPolicy
+from rrc_simulation.control.control_policy import ImpedanceControllerPolicy
+from rrc_simulation.control.control_policy import HierarchicalControllerPolicy
 
 
 class RandomPolicy:
@@ -69,7 +70,11 @@ def main():
     )
 
     # TODO: Replace with your environment if you used a custom one.
-    action_type = cube_env.ActionType.POSITION if difficulty != 2 else cube_env.ActionType.TORQUE
+    if difficulty == 2:
+        action_type = cube_env.ActionType.TORQUE_AND_POSITION
+    else:
+        action_type = cube_env.ActionType.POSITION
+
     env = gym.make(
         "rrc_simulation.gym_wrapper:real_robot_challenge_phase_1-v1",
         initializer=initializer,
@@ -79,9 +84,11 @@ def main():
 
     # TODO: Replace this with your model
     # Note: You may also use a different policy for each difficulty level (difficulty)
-    if difficulty == 2:
-        policy = ImpedenceControllerPolicy(action_space=env.action_space,
-                initial_pose=initial_pose, goal_pose=goal_pose)
+    if difficulty in [2, 3]:
+        policy = HierarchicalControllerPolicy(action_space=env.action_space,
+                    initial_pose=initial_pose, goal_pose=goal_pose,
+                    load_dir='./push_reorient/push_reorient_s0')
+        env = ResidualPolicyWrapper(env, policy)
     else:
         policy = RandomPolicy(env.action_space)
 
@@ -89,12 +96,13 @@ def main():
     # matches with the episode length of the task.  When using the default Gym
     # environment, this is the case when looping until is_done == True.  Make
     # sure to adjust this in case your custom environment behaves differently!
+    
     is_done = False
     observation = env.reset()
-    if isinstance(policy, ImpedenceControllerPolicy):
+    
+    if isinstance(policy, (HiearachicalControllerPolicy, ImpedanceControllerPolicy)):
         policy.set_waypoints(env.platform, observation)
     accumulated_reward = 0
-    #import pdb; pdb.set_trace()
     while not is_done:
         action = policy.predict(observation)
         observation, reward, is_done, info = env.step(action)

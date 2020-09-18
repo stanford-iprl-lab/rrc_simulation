@@ -140,6 +140,15 @@ class RandomOrientationInitializer:
 
 @configurable(pickleable=True)
 class PushCubeEnv(gym.Env):
+    observation_names = [
+            "robot_position",
+            "robot_velocity",
+            "robot_tip_positions",
+            "object_position",
+            "object_orientation",
+            "goal_object_position",
+        ]
+
     def __init__(
         self,
         initializer=None,
@@ -192,15 +201,6 @@ class PushCubeEnv(gym.Env):
             )
         else:
             raise ValueError("Invalid action_type")
-
-        self.observation_names = [
-            "robot_position",
-            "robot_velocity",
-            "robot_tip_positions",
-            "object_position",
-            "object_orientation",
-            "goal_object_position",
-        ]
 
         self.observation_space = gym.spaces.Dict(
             {
@@ -404,11 +404,7 @@ class PushCubeEnv(gym.Env):
 
 @configurable(pickleable=True)
 class PushReorientCubeEnv(PushCubeEnv):
-    def __init__(self, *args, **kwargs):
-        super(PushReorientCubeEnv, self).__init__(*args, **kwargs)
-
-        spaces = TriFingerPlatform.spaces
-        self.observation_names = [
+    observation_names = [
             "robot_position",
             "robot_velocity",
             "robot_tip_positions",
@@ -417,6 +413,10 @@ class PushReorientCubeEnv(PushCubeEnv):
             "goal_object_position",
             "goal_object_orientation",
         ]
+    def __init__(self, *args, **kwargs):
+        super(PushReorientCubeEnv, self).__init__(*args, **kwargs)
+
+        spaces = TriFingerPlatform.spaces
 
         self.observation_space = gym.spaces.Dict(
             {

@@ -1,82 +1,158 @@
 import enum
 
-from spinup.utils.test_policy import load_policy_and_env
+from gym.spaces import Dict
+from gym import ObservationWrapper
+from rrc_simulation.trifinger_platform import TriFingerPlatform
 from rrc_simulation.gym_wrapper.envs import cube_env, custom_env
 from rrc_simulation.gym_wrapper.envs.cube_env import ActionType
-from rrc_simulation.traj_opt import 
 from rrc_simulation.control.custom_pinocchio_utils import CustomPinocchioUtils
 from rrc_simulation.control.controller_utils import *
 
 
 class PolicyMode(enum.Enum):
+    RESET = enum.auto()
     TRAJ_OPT = enum.auto()
-    IMPEDENCE = enum.auto()
+    IMPEDANCE = enum.auto()
     RL_ONLY = enum.auto()
-    RL_RESIDUAL = enum.auto()
+    RESIDUAL = enum.auto()
 
 
-class ResidualPolicy:
-    impedence_keys = []
-    def __init__(self, 
-                 observation_space,
-                 action_space,
-                 policy_mode=PolicyMode.RL_RESIDUAL):
-        self.observation_space = observation_space
-        self.action_space = action_space
-        self.mode = policy_mode
-        if self.mode == PolicyMode.RL_RESIDUAL:
-            
-    def get_action(self, observation):
-        if self.mode == PolicyMode.RL_RESIDUAL:
+class ResidualPolicyWrapper(ObservationWrapper):
+    def __init__(self, env, policy):
+        assert isinstance(env.unwrapped, cube_env.CubeEnv), 'env expects type CubeEnv'
+        self.env = env
+        self.reward_range = self.env.reward_range
+        # set observation_space and action_space below
+        spaces = TriFingerPlatform.spaces
+        self._action_space = Dict({
+            'torque': spaces.robot_torque.gym, 'position': spaces.robot_position.gym})
+        self.set_policy(policy)
+        
+    @property
+    def action_space(self):
+        if self.mode == PolicyMode.IMPEDANCE:
+            return self._action_space['torque']
+        else:
+            return self._action_space['position']
 
+    @property
+    def action_type(self):
+        if self.mode == PolicyMode.IMPEDANCE:
+            return ActionType.TORQUE
+        else:
+            return ActionType.POSITION
+    
+    @property
+    def mode(self):
+        assert self.policy, 'Need to first call self.set_policy() to access mode'
+        return self.policy.mode
 
-class ResidualPolicyEnv(cube_env.CubeEnv):
-    def __init__(self,
-        initializer,
-        action_type=ActionType.TORQUE,
-        frameskip=1,
-        visualization=False,
-        policy_mode=PolicyMode.IMPEDANCE,
-        policy=None,
-        load_dir='',
-        load_itr='last'
-    ):
-        super(ResidualPolicyEnv, self).__init__(initializer, action_type,
-                frameskip, visualization)
-        self.mode = policy_mode
-        self.rl_policy = policy
-        if self.rl_policy is None:
-            self.load_policy(load_dir, load_itr)
-
-    def load_policy(self, load_dir, load_itr='last', deterministic=False):
-        self.rl_policy, _ = load_policy_and_env(load_dir, load_itr, deterministic)
-        print(f'loaded policy from {load_dir}')
-        return
-
-    def get_action(self, observation):
-        if self.mode == PolicyMode.TRAJ_OPT:
-            return self.rl_policy(observation)
-        elif self.mode == PolicyMode.RL_ONLY:
+    def set_policy(self, policy):
+        self.policy = policy
+        self.rl_observation_names = policy.observation_names
+        self.rl_observation_space = policy.rl_observation_space
+        self.observation_space = Dict({'impedance': self.env.observation_space,
+                                       'rl': self.rl_observation_space})
+        
+    def observation(self, observation):
+        observation_rl = self.process_observation_rl(observation)
+        observation_imp = self.process_observation_impedance(observation)
+        return {'impedance': observation_imp, 'rl': observation_rl}
 
     def process_observation_residual(self, observation):
         return observation
-
-    def process_observation_rl(self, observation):
-        return observation
     
-    def process_observation_impedence(self, observation):
+    def process_observation_rl(self, observation):
+        if len(self.platform._action_log['actions']):
+            t = self.platform._action_log['actions'][-1]['t']
+        else:
+            t = 0
+        robot_observation = self.platform.get_robot_observation(t)
+        object_observation = self.platform.get_object_pose(t)
+        robot_tip_positions = self.platform.forward_kinematics(
+            robot_observation.position
+        )
+        robot_tip_positions = np.array(robot_tip_positions)
+
+        observation = {
+            "robot_position": robot_observation.position,
+            "robot_velocity": robot_observation.velocity,
+            "robot_tip_positions": robot_tip_positions,
+            "object_position": object_observation.position,
+            "object_orientation": object_observation.orientation,
+            "goal_object_position": self.goal["position"],
+            "goal_object_orientation": self.goal["orientation"],
+        }
+        observation = np.concatenate([observation[k].flatten() for k in self.rl_observation_names])
+        return observation
+
+    def process_observation_impedance(self, observation):
         return observation
 
     def reset(self):
-        self.last_obs = super(ResidualPolicyEnv, self).reset()
-        return self.last_obs
+        obs = self.env.reset()
+        return self.observation(obs)
+
+    def _step(self, action):
+        if self.unwrapped.platform is None:
+            raise RuntimeError("Call `reset()` before starting to step.")
+
+        if not self.action_space.contains(action):
+            raise ValueError(
+                "Given action is not contained in the action space."
+            )
+
+        num_steps = self.unwrapped.frameskip
+
+        # ensure episode length is not exceeded due to frameskip
+        step_count_after = self.unwrapped.step_count + num_steps
+        if step_count_after > move_cube.episode_length:
+            excess = step_count_after - move_cube.episode_length
+            num_steps = max(1, num_steps - excess)
+
+        reward = 0.0
+        for _ in range(num_steps):
+            self.unwrapped.step_count += 1
+            if self.unwrapped.step_count > move_cube.episode_length:
+                raise RuntimeError("Exceeded number of steps for one episode.")
+
+            # send action to robot
+            robot_action = self._gym_action_to_robot_action(action)
+            t = self.unwrapped.platform.append_desired_action(robot_action)
+
+            # Use observations of step t + 1 to follow what would be expected
+            # in a typical gym environment.  Note that on the real robot, this
+            # will not be possible
+            observation = self.unwrapped._create_observation(t + 1)
+
+            reward += self.unwrapped.compute_reward(
+                observation["achieved_goal"],
+                observation["desired_goal"],
+                self.unwrapped.info,
+            )
+
+        is_done = self.unwrapped.step_count == move_cube.episode_length
+
+        return observation, reward, is_done, self.unwrapped.info
+    
+    def _gym_action_to_robot_action(self, gym_action):
+        if self.action_type == ActionType.TORQUE:
+            robot_action = self.platform.Action(torque=gym_action)
+        elif self.action_type == ActionType.POSITION:
+            robot_action = self.platform.Action(position=gym_action) 
+        else:
+            raise ValueError("Invalid action_type")
+
+        return robot_action
 
     def step(self, action):
-        if self.mode == PolicyMode.RL_RESIDUAL:
-            action = self.rl_policy(np.concatenate(
-                [self.process_observation_rl(self.last_obs), action])) 
-        elif self.mode == PolicyMode.RL_ONLY:
-            action = self.rl_policy(self.last_obs)
         # CubeEnv handles gym_action_to_robot_action
-        return super(ResidualPolicyEnv, self).step(action)
+        if self.mode == PolicyMode.RL_ONLY:
+            self.unwrapped.frameskip = self.policy.rl_frameskip
+        else:
+            self.unwrapped.frameskip = 1
+
+        obs, r, d, i = self._step(action)
+        obs = self.observation(obs)
+        return obs, r, d, i
 
