@@ -3,12 +3,14 @@ import numpy as np
 import gym
 import pybullet
 
+from gym import wrappers
 from gym.spaces import Box
 from gym.spaces import Discrete
 from gym.spaces import MultiDiscrete
 from gym.spaces import MultiBinary
 from gym.spaces import Tuple
 from gym.spaces import Dict
+from gym.spaces import utils
 
 from rrc_simulation import TriFingerPlatform
 from rrc_simulation import visual_objects
@@ -28,7 +30,7 @@ camera_dist = 1.0
 pitch = -45.
 yaw = 0.
 
-reset_camera = lambda: pybullet.resetDebugVisualizerCamera(cameraDistance=camera_dist, 
+reset_camera = lambda: pybullet.resetDebugVisualizerCamera(cameraDistance=camera_dist,
                                     cameraYaw=yaw,
                                     cameraPitch=pitch,
                                     cameraTargetPosition=camera_pos)
@@ -79,7 +81,7 @@ class CurriculumInitializer:
         if self.difficulty == 4:
             self.final_ori = np.roll(self.final_ori, 1)
             self.final_ori[0] = compute_orientation_error(goal_pose, final_pose,
-                                                          difficulty=self.difficulty)
+                                                          scale=False)
 
         update_level = np.mean(self.final_dist) < DIST_THRESH
         if self.difficulty == 4:
@@ -160,7 +162,7 @@ class PushCubeEnv(gym.Env):
 
         Args:
             initializer: Initializer class for providing initial cube pose and
-                goal pose. If no initializer is provided, we will initialize in a way 
+                goal pose. If no initializer is provided, we will initialize in a way
                 which is be helpful for learning.
             action_type (ActionType): Specify which type of actions to use.
                 See :class:`ActionType` for details.
@@ -171,7 +173,6 @@ class PushCubeEnv(gym.Env):
         """
         # Basic initialization
         # ====================
-        
         self.initializer = initializer
         self.action_type = action_type
         self.visualization = visualization
@@ -244,7 +245,7 @@ class PushCubeEnv(gym.Env):
         if self.initializer is None:
             # if no initializer is given (which will be the case during training),
             # we can initialize in any way desired. here, we initialize the cube always
-            # in the center of the arena, instead of randomly, as this appears to help 
+            # in the center of the arena, instead of randomly, as this appears to help
             # training
             initial_robot_position = TriFingerPlatform.spaces.robot_position.default
             default_object_position = (
@@ -257,7 +258,7 @@ class PushCubeEnv(gym.Env):
                 position=default_object_position,
                 orientation=default_object_orientation,
             )
-            goal_object_pose = move_cube.sample_goal(difficulty=1)   
+            goal_object_pose = move_cube.sample_goal(difficulty=1)
         else:
             # if an initializer is given, i.e. during evaluation, we need to initialize
             # according to it, to make sure we remain coherent with the standard CubeEnv.
@@ -265,7 +266,7 @@ class PushCubeEnv(gym.Env):
             initial_robot_position = TriFingerPlatform.spaces.robot_position.default
             initial_object_pose=self.initializer.get_initial_state()
             goal_object_pose = self.initializer.get_goal()
-            
+
         self.platform = TriFingerPlatform(
             visualization=self.visualization,
             initial_robot_position=initial_robot_position,
@@ -284,7 +285,7 @@ class PushCubeEnv(gym.Env):
                 orientation=goal_object_pose.orientation,
                 physicsClientId=self.platform.simfinger._pybullet_client_id,
             )
-            reset_camera() 
+            reset_camera()
 
         self.info = {"difficulty": self.initializer.difficulty}
 
@@ -384,9 +385,6 @@ class PushCubeEnv(gym.Env):
 
         is_done = self.step_count == move_cube.episode_length
         if is_done and isinstance(self.initializer, CurriculumInitializer):
-            self.info['is_success'] = (
-                    np.linalg.norm(observation['object_position'] -
-                        observation['goal_object_position']) < DIST_THRESH)
             goal_pose = self.goal
             if not isinstance(goal_pose, move_cube.Pose):
                 goal_pose = move_cube.Pose.from_dict(goal_pose)
@@ -394,11 +392,6 @@ class PushCubeEnv(gym.Env):
                 position=observation['object_position'].flatten(),
                 orientation=observation['object_orientation'].flatten()))
             self.initializer.update_initializer(object_pose, goal_pose)
-            self.info['final_score'] = move_cube.evaluate_state(
-                goal_pose, object_pose, self.info['difficulty'])
-            pos_idx = 3 if self.info['difficulty'] > 3 else 2
-            c_pose, g_pose = object_pose.position[:pos_idx], goal_pose.position[:pos_idx]
-            self.info['final_dist'] = np.linalg.norm(c_pose - g_pose)
         return observation, reward, is_done, self.info
 
 
@@ -413,6 +406,7 @@ class PushReorientCubeEnv(PushCubeEnv):
             "goal_object_position",
             "goal_object_orientation",
         ]
+
     def __init__(self, *args, **kwargs):
         super(PushReorientCubeEnv, self).__init__(*args, **kwargs)
 
@@ -453,6 +447,30 @@ class PushReorientCubeEnv(PushCubeEnv):
         return observation
 
 
+@configurable(pickleable=True)
+class SparseCubeEnv(CubeEnv):
+    def __init__(
+            self,
+            initializer,
+            action_type=ActionType.POSITION,
+            frameskip=1,
+            visualization=False,
+            pos_thresh=DIST_THRESH,
+            ori_thresh=ORI_THRESH
+            ):
+        super(SparseCubeEnv, self).__init__(initializer, action_type,
+                frameskip, visualization)
+        self.pos_thresh = pos_thresh
+        self.ori_thresh = ori_thresh
+
+    def compute_reward(self, achieved_goal, desired_goal, info):
+        goal_pose = move_cube.Pose.from_dict(desired_goal)
+        obj_pose = move_cube.Pose.from_dict(achieved_goal)
+        pos_error = np.linalg.norm(goal_pose.position - obj_pose.position)
+        ori_error = compute_orientation_error(goal_pose, obj_pose, scale=False)
+        return float(pos_error < self.pos_thresh and ori_error < self.ori_thresh)
+
+
 class FlattenGoalWrapper(gym.ObservationWrapper):
     """Wrapper to make rrc env baselines and VDS compatible"""
     def __init__(self, env, step_rew_thresh=0.01):
@@ -460,7 +478,7 @@ class FlattenGoalWrapper(gym.ObservationWrapper):
         self._sample_goal_fun = None
         self._max_episode_steps = env._max_episode_steps
         self.observation_space = gym.spaces.Dict({
-            k: flatten_space(v) 
+            k: flatten_space(v)
             for k, v in env.observation_space.spaces.items()
             })
         self._step_rew_thresh = step_rew_thresh
@@ -497,7 +515,7 @@ class FlattenGoalWrapper(gym.ObservationWrapper):
         achieved_goal = dict(position=achieved_goal[...,:3], orientation=achieved_goal[...,3:])
         desired_goal = dict(position=desired_goal[...,:3], orientation=desired_goal[...,3:])
         return self.unwrapped.compute_reward(achieved_goal, desired_goal, info)
-    
+
     def _sample_goal(self):
         return np.concatenate(list(self.initializer.get_goal().to_dict().values()))
 
@@ -529,18 +547,16 @@ class FlattenGoalWrapper(gym.ObservationWrapper):
         return observation
 
 
-class DistRewardWrapper(gym.RewardWrapper):
-    def __init__(self, env, target_dist=0.2, dist_coef=1., ori_coef=1.,
-                 ac_norm_pen=0.2, final_step_only=True, augment_reward=True,
-                 rew_fn='lin'):
-        super(DistRewardWrapper, self).__init__(env)
+class CubeRewardWrapper(gym.Wrapper):
+    def __init__(self, env, target_dist=0.195, pos_coef=1., ori_coef=0.,
+                 ac_norm_pen=0.2, rew_fn='exp'):
+        super(CubeRewardWrapper, self).__init__(env)
         self._target_dist = target_dist  # 0.156
-        self._dist_coef = dist_coef
+        self._pos_coef = pos_coef
         self._ori_coef = ori_coef
         self._ac_norm_pen = ac_norm_pen
-        self._last_action = None
-        self.final_step_only = final_step_only
-        self.augment_reward = augment_reward
+        self._prev_action = None
+        self._prev_obs = None
         self.rew_fn = rew_fn
 
     @property
@@ -559,55 +575,82 @@ class DistRewardWrapper(gym.RewardWrapper):
         return self.unwrapped.initializer.difficulty
 
     def reset(self, **reset_kwargs):
-        self._last_action = None
-        return super(DistRewardWrapper, self).reset(**reset_kwargs)
+        self._prev_action = None
+        self._prev_obs = super(CubeRewardWrapper, self).reset(**reset_kwargs)
+        return self._prev_obs
 
     def step(self, action):
-        self._last_action = action
-        observation, reward, done, info = self.env.step(action)
-        if self.final_step_only and done:
-            return observation, reward, done, info
-        else:
-            return observation, self.reward(reward, info), done, info
+        self._prev_action = action
+        observation, reward, done, info = super(CubeRewardWrapper, self).step(action)
+        reward = self.compute_reward(self._prev_obs, observation)
+        self._prev_obs = observation
+        return observation, reward, done, info
 
-    def reward(self, reward, info):
-        final_dist = self.compute_goal_dist(info)
+    def compute_reward(self, previous_observation, observation):
+        info = self.unwrapped.info
+        prev_pos_error = self.compute_position_error(previous_observation)
+        pos_error = self.compute_position_error(observation)
+        step_rew = step_pos_rew = prev_pos_error - pos_error
+        if self.difficulty == 4 or self._ori_coef:
+            prev_ori_error = self.compute_orientation_error(previous_observation, scale=True)
+            ori_error = self.compute_orientation_error(observation, scale=True)
+            step_ori_rew = prev_ori_error - ori_error
+            step_rew = (step_pos_rew * self._pos_coef +
+                        step_ori_rew * self._ori_coef)
         if self.rew_fn == 'lin':
-            rew = self._dist_coef * (1 - final_dist/self.target_dist)
-            if self.info['difficulty'] == 4:
-                rew += self._ori_coef * (1 - self.compute_orientation_error())
+            rew = self._pos_coef * (1 - pos_error/self.target_dist)
+            if self.difficulty == 4 or self._ori_coef:
+                rew += self._ori_coef * (1 - ori_error)
         elif self.rew_fn == 'exp':
-            rew = self._dist_coef * np.exp(-final_dist/self.target_dist)
-            if self.info['difficulty'] == 4:
-                rew += self._ori_coef * np.exp(-self.compute_orientation_error())
-        if self.augment_reward:
-            rew += reward
-        if self._ac_norm_pen:
-            rew -= np.linalg.norm(self._last_action) * self._ac_norm_pen
-        return rew
+            rew = self._pos_coef * np.exp(-pos_error/self.target_dist)
+            if self.difficulty == 4 or self._ori_coef:
+                rew += self._ori_coef * np.exp(-ori_error)
 
-    def get_goal_object_pose(self):
+        ac_penalty = -np.linalg.norm(self._prev_action) * self._ac_norm_pen
+        info['ac_penalty'] = ac_penalty
+        info['step_rew'] = step_rew
+        info['rew'] = rew
+        info['pos_error'] = pos_error
+        info['ori_error'] = ori_error
+        total_rew = step_rew * 3 + rew + ac_penalty
+        if pos_error < DIST_THRESH or ori_error < ORI_THRESH:
+            return 2.5 * ((pos_error < DIST_THRESH) + (ori_error < ORI_THRESH))
+        return total_rew
+
+    def unflatten_observation(self, observation):
+        filter_keys = []
+        env = self.env
+        while env != self.unwrapped:
+            if isinstance(env, wrappers.FilterObservation):
+                filter_keys = env._filter_keys
+            env = env.env
+
+        obs_space = self.unwrapped.observation_space
+        if isinstance(obs_space, gym.spaces.Dict):
+            if filter_keys:
+                obs_space = gym.spaces.Dict({obs_space[k] for k in filter_keys})
+            observation = utils.unflatten(obs_space, observation)
+        return observation
+
+    def get_goal_object_pose(self, observation):
         goal_pose = self.unwrapped.goal
         if not isinstance(goal_pose, move_cube.Pose):
             goal_pose = move_cube.Pose.from_dict(goal_pose)
-        cube_state = self.unwrapped.platform.cube.get_state()
-        object_pose = move_cube.Pose(
-                np.asarray(cube_state[0]).flatten(),
-                np.asarray(cube_state[1]).flatten())
+        observation = self.unflatten_observation(observation)
+        object_pose = move_cube.Pose(position=observation['object_position'],
+                                     orientation=observation['object_orientation'])
         return goal_pose, object_pose
 
-    def compute_orientation_error(self, scale=True):
-        goal_pose, object_pose = self.get_goal_object_pose()
+    def compute_orientation_error(self, observation, scale=False):
+        goal_pose, object_pose = self.get_goal_object_pose(observation)
         orientation_error = compute_orientation_error(goal_pose, object_pose,
-                                                      scale=scale, difficulty=self.difficulty)
+                                                      scale=scale)
         return orientation_error
 
-    def compute_goal_dist(self, info):
-        goal_pose, object_pose = self.get_goal_object_pose()
-        pos_idx = 3 if info['difficulty'] > 3 else 2
-        goal_dist = np.linalg.norm(object_pose.position[:pos_idx] -
-                                   goal_pose.position[:pos_idx])
-        return goal_dist
+    def compute_position_error(self, observation):
+        goal_pose, object_pose = self.get_goal_object_pose(observation)
+        pos_error = np.linalg.norm(object_pose.position - goal_pose.position)
+        return pos_error
 
 
 class LogInfoWrapper(gym.Wrapper):
@@ -621,11 +664,10 @@ class LogInfoWrapper(gym.Wrapper):
             [self.valid_keys.append(k) for k in new_keys if k not in self.valid_keys]
         for k in info_keys:
             assert k.split('final_')[-1] in self.valid_keys, f'{k} is not a valid key'
-        assert not ('is_success' in info_keys and 'is_success_ori' in info_keys)
         self.info_keys = info_keys
 
     def get_goal_object_pose(self):
-        goal_pose = self.unwrapped.goal 
+        goal_pose = self.unwrapped.goal
         if not isinstance(goal_pose, move_cube.Pose):
             goal_pose = move_cube.Pose.from_dict(goal_pose)
         cube_state = self.unwrapped.platform.cube.get_state()
@@ -634,7 +676,7 @@ class LogInfoWrapper(gym.Wrapper):
                 np.asarray(cube_state[1]).flatten())
         return goal_pose, object_pose
 
-    def compute_goal_dist(self, info, score=False):
+    def compute_position_error(self, info, score=False):
         goal_pose, object_pose = self.get_goal_object_pose()
         if score:
             return move_cube.evaluate_state(goal_pose, object_pose,
@@ -643,9 +685,9 @@ class LogInfoWrapper(gym.Wrapper):
         return np.linalg.norm(object_pose.position[:pos_idx] -
                               goal_pose.position[:pos_idx])
 
-    def compute_goal_orientation_dist(self, info, scale=False):
+    def compute_orientation_error(self, info, scale=False):
         goal_pose, object_pose = self.get_goal_object_pose()
-        return compute_orientation_error(goal_pose, object_pose, scale=scale, quad=True)
+        return compute_orientation_error(goal_pose, object_pose, scale=scale)
 
     def step(self, action):
         o, r, d, i = super(LogInfoWrapper, self).step(action)
@@ -654,18 +696,17 @@ class LogInfoWrapper(gym.Wrapper):
                 shortened_k = k.split('final_')[-1]
                 final = shortened_k != k
                 if shortened_k == 'score' and final == d:
-                    i[k] = self.compute_goal_dist(i, score=True)
+                    i[k] = self.compute_position_error(i, score=True)
                 elif shortened_k == 'dist' and final == d:
-                    i[k] = self.compute_goal_dist(i, score=False)
+                    i[k] = self.compute_position_error(i, score=False)
                 elif shortened_k == 'ori_dist' and final == d:
-                    i[k] = self.compute_goal_orientation_dist(i, scale=False)
+                    i[k] = self.compute_orientation_error(i, scale=False)
                 elif shortened_k == 'ori_scaled' and final ==  d:
-                    i[k] = self.compute_goal_orientation_dist(i, scale=True)
+                    i[k] = self.compute_orientation_error(i, scale=True)
                 elif k == 'is_success' and d:
-                    i[k] = self.compute_goal_dist(i) < DIST_THRESH 
+                    i[k] = self.compute_position_error(i) < DIST_THRESH
                 elif k == 'is_success_ori' and d:
-                    i['is_success'] = (self.compute_goal_dist(i) < DIST_THRESH
-                            and self.compute_goal_orientation_dist(i) < ORI_THRESH)
+                    i['is_success_ori'] = self.compute_orientation_error(i) < ORI_THRESH
                 elif k == 'init_sample_radius' and d:
                     initializer = self.unwrapped.initializer
                     sample_radius = np.linalg.norm(initializer.initial_pose.position[:2])
@@ -678,8 +719,8 @@ class LogInfoWrapper(gym.Wrapper):
         return o, r, d, i
 
 
-def compute_orientation_error(goal_pose, actual_pose, scale=False, difficulty=2):
-    yaw_only = quad = difficulty != 4
+def compute_orientation_error(goal_pose, actual_pose, scale=False,
+                              yaw_only=False, quad=False):
     if yaw_only:
         goal_ori = Rotation.from_quat(goal_pose.orientation).as_euler('xyz')
         goal_ori[:2] = 0

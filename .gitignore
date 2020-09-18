@@ -10,5 +10,8 @@ data/
 *.swo
 **/output/
 **/logs/
+**/models/
 
 **/.ipynb_checkpoints/
+
+*.tar.gz

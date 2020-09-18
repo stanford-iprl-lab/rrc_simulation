@@ -17,6 +17,7 @@ from rrc_simulation.gym_wrapper.envs.control_env import PolicyMode
 from rrc_simulation.traj_opt.fixed_contact_point_opt import FixedContactPointOpt
 from spinup.utils.test_policy import load_policy_and_env
 
+
 class ImpedanceControllerPolicy:
     def __init__(self, action_space=None, initial_pose=None, goal_pose=None,
                  npz_file=None):
@@ -24,18 +25,22 @@ class ImpedanceControllerPolicy:
         if npz_file is not None:
             self.load_npz(npz_file)
         else:
-            yaw = 0.
-            self.x0 = np.concatenate([initial_pose.position, initial_pose.orientation])[None]
-            self.x_goal =  np.concatenate([goal_pose.position, goal_pose.orientation])[None]
             self.nGrid = 50
             self.dt = 0.01
+
+        self.set_init_goal(initial_pose, goal_pose)
+        self.setup_logging()
+
+    def set_init_goal(self, initial_pose, goal_pose):
+        self.x0 = np.concatenate([initial_pose.position, initial_pose.orientation])[None]
+        self.x_goal = self.x0.copy()
+        self.x_goal[0, :3] = goal_pose.position
         self.x0_pos = self.x0[0,0:3]
         self.x0_quat = self.x0[0,3:]
         init_goal_dist = np.linalg.norm(goal_pose.position - initial_pose.position)
         print(f'init position: {initial_pose.position}, goal position: {goal_pose.position}, '
               f'dist: {init_goal_dist}')
         print(f'init orientation: {initial_pose.orientation}, goal orientation: {goal_pose.orientation}')
-        self.setup_logging()
 
     def setup_logging(self):
         x_goal_str = "-".join(map(str, self.x_goal[0,:].tolist()))
@@ -61,16 +66,24 @@ class ImpedanceControllerPolicy:
     def get_pose_from_observation(self, observation, goal_pose=False):
         key = 'achieved_goal' if not goal_pose else 'desired_goal'
         return move_cube.Pose.from_dict(observation[key])
-    
+
     def get_robot_position_velocity(self, observation):
         observation = observation['observation']
         return observation['position'], observation['velocity']
 
     def set_waypoints(self, platform, observation):
         self.step_count = 0
-        self.custom_pinocchio_utils = CustomPinocchioUtils(platform.simfinger.finger_urdf_path, platform.simfinger.tip_link_names)
+        self.custom_pinocchio_utils = CustomPinocchioUtils(
+                platform.simfinger.finger_urdf_path,
+                platform.simfinger.tip_link_names)
+
+        # Get object pose
+        obj_pose = self.get_pose_from_observation(observation)
+
+        # Get initial fingertip positions in world frame
+        current_position, _ = self.get_robot_position_velocity(observation)
         self.x_soln, self.l_wf_soln, self.cp_params = control_trifinger_platform.run_traj_opt(
-                platform, self.custom_pinocchio_utils, self.x0, self.x_goal, self.nGrid, self.dt, self.save_dir)
+                obj_pose, current_position, self.custom_pinocchio_utils, self.x0, self.x_goal, self.nGrid, self.dt, self.save_dir)
         self.goal_reached = False
 
         custom_pinocchio_utils = self.custom_pinocchio_utils
@@ -79,9 +92,6 @@ class ImpedanceControllerPolicy:
 
         reset_camera()
 
-        # Get object pose
-        obj_pose = self.get_pose_from_observation(observation)
-
         # Visual markers
         init_cps = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
         self.finger_waypoints = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
@@ -89,9 +99,6 @@ class ImpedanceControllerPolicy:
         # Draw target contact points
         target_cps_wf = control_trifinger_platform.get_cp_wf_list_from_cp_params(self.cp_params, self.x0_pos, self.x0_quat, self.cube_half_size)
         init_cps.set_state(target_cps_wf)
-
-        # Get initial fingertip positions in world frame
-        current_position, _ = self.get_robot_position_velocity(observation)
 
         # Get initial contact points and waypoints to them
         self.finger_waypoints_list = []
@@ -145,7 +152,6 @@ class ImpedanceControllerPolicy:
                                           tol           = self.tol
                                           )
         torque = np.clip(torque, self.action_space.low, self.action_space.high)
-
         if self.goal_reached:
             if self.pre_traj_waypoint_i < len(self.finger_waypoints_list[0]):
                 self.pre_traj_waypoint_i += 1
@@ -156,7 +162,7 @@ class ImpedanceControllerPolicy:
                 self.goal_reached = False
         return torque
 
-    
+
 class HierarchicalControllerPolicy(ImpedanceControllerPolicy):
     DIST_THRESH = 0.09
     ORI_THRESH = np.pi / 6
@@ -183,11 +189,13 @@ class HierarchicalControllerPolicy(ImpedanceControllerPolicy):
         self.observation_names = list(self.rl_env.unwrapped.observation_space.spaces.keys())
         self.rl_observation_space = self.rl_env.observation_space
         print('loaded policy from {}'.format(load_dir))
-    
+
     def activate_traj_opt(self, observation):
         obj_pose = self.get_pose_from_observation(observation)
+        goal_pose = self.get_pose_from_observation(observation, goal_pose=True)
+
         # TODO: check orientation error
-        if np.linalg.norm(obj_pose.position) > self.DIST_THRESH:
+        if np.linalg.norm(obj_pose.position - goal_pose.position) > self.DIST_THRESH:
             self.mode = PolicyMode.RL_ONLY
             return False
         robot_pos, robot_vel = self.get_robot_position_velocity(observation)
@@ -198,7 +206,7 @@ class HierarchicalControllerPolicy(ImpedanceControllerPolicy):
         else:
             self.mode = PolicyMode.RESET
         return True
-    
+
     def set_waypoints(self, platform, observation):
         # stores platform if set_waypoints called later
         if 'impedance' in observation:
@@ -207,12 +215,16 @@ class HierarchicalControllerPolicy(ImpedanceControllerPolicy):
         self.activate_traj_opt(observation)
         if self.mode == PolicyMode.TRAJ_OPT:
             self.init_traj = True
+            init_pose = self.get_pose_from_observation(observation)
+            goal_pose = self.get_pose_from_observation(observation, goal_pose=True)
+            self.set_init_goal(init_pose, goal_pose)
             super(HierarchicalControllerPolicy, self).set_waypoints(self.platform, observation)
             self.mode = PolicyMode.IMPEDANCE
 
     def predict(self, observation):
         if not self.init_traj and self.activate_traj_opt(observation['impedance']):
             self.set_waypoints(None, observation['impedance'])
+
         if self.mode == PolicyMode.RESET:
             ac = self.default_robot_position
         elif self.mode == PolicyMode.IMPEDANCE:

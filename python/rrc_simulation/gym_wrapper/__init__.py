@@ -19,5 +19,5 @@ register(
 
 register(
     id="real_robot_challenge_phase_1-v4",
-    entry_point="rrc_simulation.gym_wrapper.envs.control_env:ResidualPolicyEnv",
+    entry_point="rrc_simulation.gym_wrapper.envs.custom_env:SparseCubeEnv",
 )

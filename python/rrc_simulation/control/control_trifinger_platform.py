@@ -90,9 +90,9 @@ def main(args):
 """
 Given intial state, run trajectory optimization
 """
-def run_traj_opt(platform, custom_pinocchio_utils, x0, x_goal, nGrid, dt, save_dir):
-  obj_pose = platform.get_object_pose(0)
-  current_position = platform.get_robot_observation(0).position
+def run_traj_opt(obj_pose, current_position, custom_pinocchio_utils, x0, x_goal, nGrid, dt, save_dir):
+  # obj_pose = platform.get_object_pose(0)
+  # current_position = platform.get_robot_observation(0).position
   init_fingertip_pos_list = [[],[],[]] # Containts 3 lists, one for each finger
   for finger_id in range(3):
     tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[finger_id]
