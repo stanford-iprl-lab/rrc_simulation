@@ -120,6 +120,10 @@ def main():
     with open(sample_file, "wb") as fh:
         pickle.dump(test_data, fh, pickle.HIGHEST_PROTOCOL)
 
+    # Read set of goals from sample_file
+    #with open(sample_file, "rb") as fh:
+    #    test_data = pickle.load(fh)
+
     # run "evaluate_policy.py" for each sample
     for sample in test_data:
         print(
