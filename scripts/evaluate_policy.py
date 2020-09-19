@@ -23,6 +23,9 @@ is written to the specified file.  This log file is crucial as it is used to
 evaluate the actual performance of the policy.
 """
 import sys
+import os
+import os.path as osp
+import pickle
 
 import gym
 import numpy as np
@@ -69,7 +72,10 @@ def main():
     )
 
     # TODO: Replace with your environment if you used a custom one.
-    action_type = cube_env.ActionType.POSITION if difficulty != 2 else cube_env.ActionType.TORQUE
+    if difficulty in [1,2,3,4]:
+      action_type = cube_env.ActionType.TORQUE
+    else:
+      action_type = cube_env.ActionType.POSITION
     env = gym.make(
         "rrc_simulation.gym_wrapper:real_robot_challenge_phase_1-v1",
         initializer=initializer,
@@ -79,7 +85,7 @@ def main():
 
     # TODO: Replace this with your model
     # Note: You may also use a different policy for each difficulty level (difficulty)
-    if difficulty == 2:
+    if difficulty in [1,2,3,4]:
         policy = ImpedenceControllerPolicy(action_space=env.action_space,
                 initial_pose=initial_pose, goal_pose=goal_pose)
     else:
@@ -108,6 +114,34 @@ def main():
     # store the log for evaluation
     env.platform.store_action_log(output_file)
 
+    # If the final score is less than some desired threshold
+    # Rename file and also store in the failed_samples directory
+    accumulated_reward_thresh = -400
+    failed_dir = './output/failed_samples'
+    if accumulated_reward < accumulated_reward_thresh:
+        old_filedir = osp.split(output_file)[0].replace('output/', '').strip('/')
+        sample_info = osp.splitext(osp.split(output_file)[1])[0].replace('action_log_','')
+        i = 0
+        filepath = lambda: osp.join(failed_dir, '{}_{}_s{}.pkl'.format(old_filedir,sample_info,i))
+        while osp.exists(filepath()): i += 1
+        filepath = filepath()
+      
+        env.platform._action_log["final_accum_reward"] = accumulated_reward
+        env.platform._action_log["goal_object_pose"] = {
+                "position": goal_pose.position.tolist(),
+                "orientation": goal_pose.orientation.tolist(),
+                }
+        env.platform._action_log["final_dist_to_goal"] = dist_to_goal
+
+        print("Saving failed sample to: {}".format(filepath))
+        with open(filepath, "wb") as fh:
+            pickle.dump(env.platform._action_log, fh)
+
+        #with open(filepath, "rb") as fh:
+        #    log = pickle.load(fh)
+        #print("goal pose: ")
+        #print(log['goal_object_pose'])
+        #print(log['final_dist_to_goal'])
 
 if __name__ == "__main__":
     main()
