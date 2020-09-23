@@ -23,13 +23,16 @@ is written to the specified file.  This log file is crucial as it is used to
 evaluate the actual performance of the policy.
 """
 import sys
+import os
+import os.path as osp
 
 import gym
 import numpy as np
 
-from rrc_simulation.gym_wrapper.envs import cube_env, control_env
-from rrc_simulation.gym_wrapper.envs.control_env import ResidualPolicyWrapper
 from rrc_simulation.tasks import move_cube
+from rrc_simulation.gym_wrapper.envs import cube_env
+from rrc_simulation.gym_wrapper.envs import control_env
+from rrc_simulation.gym_wrapper.envs.control_env import ResidualPolicyWrapper
 from rrc_simulation.control.control_policy import ImpedanceControllerPolicy
 from rrc_simulation.control.control_policy import HierarchicalControllerPolicy
 
@@ -86,12 +89,12 @@ def main():
     # TODO: Replace this with your model
     # Note: You may also use a different policy for each difficulty level (difficulty)
     if difficulty in [2, 3]:
-        policy = ImpedanceControllerPolicy(action_space=env.action_space,
-                    initial_pose=initial_pose, goal_pose=goal_pose)
-        # policy = HierarchicalControllerPolicy(action_space=env.action_space,
-        #             initial_pose=initial_pose, goal_pose=goal_pose,
-        #             load_dir='./push_reorient/push_reorient_s0')
-        # env = ResidualPolicyWrapper(env, policy)
+        # policy = ImpedanceControllerPolicy(action_space=env.action_space,
+        #             initial_pose=initial_pose, goal_pose=goal_pose)
+        policy = HierarchicalControllerPolicy(action_space=env.action_space,
+                    initial_pose=initial_pose, goal_pose=goal_pose,
+                    load_dir='./push_reorient/push_reorient_s0')
+        env = ResidualPolicyWrapper(env, policy)
     else:
         policy = RandomPolicy(env.action_space)
 
@@ -108,7 +111,6 @@ def main():
     accumulated_reward = 0
     while not is_done:
         action = policy.predict(observation)
-        action = np.round(action.astype('float64'), 8)
         observation, reward, is_done, info = env.step(action)
         accumulated_reward += reward
 
@@ -119,6 +121,22 @@ def main():
 
     # store the log for evaluation
     env.platform.store_action_log(output_file)
+
+    # If the final score is less than some desired threshold
+    # Rename file and also store in the failed_samples directory
+    accumulated_reward_thresh = 0
+    failed_dir = './output/failed_samples'
+    if accumulated_reward < accumulated_reward_thresh:
+        old_filedir = osp.split(output_file)[0].replace('./', '').replace('output/', '').strip('/')
+        i = 0
+        filepath = lambda: osp.join(failed_dir, '{}-{}.pkl'.format(old_filedir, i))
+        while osp.exists(filepath()): i += 1
+        filepath = filepath()
+
+        env.platform._action_log['goal_object_pose'] = goal_pose.to_dict()
+        with open(filepath, 'wb') as fh:
+            pickle.dump(env.platfrom._action_log, fh)
+        env.platform.store_action_log(filepath)
 
 
 if __name__ == "__main__":
