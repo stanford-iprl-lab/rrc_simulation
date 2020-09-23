@@ -649,6 +649,89 @@ class FlattenGoalWrapper(gym.ObservationWrapper):
         return observation
 
 
+# DEPRECATED, USE CubeRewardWrapper INSTEAD
+class DistRewardWrapper(gym.RewardWrapper):
+    def __init__(self, env, target_dist=0.2, dist_coef=1., ori_coef=1.,
+                 ac_norm_pen=0.2, final_step_only=True, augment_reward=True,
+                 rew_fn='lin'):
+        super(DistRewardWrapper, self).__init__(env)
+        self._target_dist = target_dist  # 0.156
+        self._dist_coef = dist_coef
+        self._ori_coef = ori_coef
+        self._ac_norm_pen = ac_norm_pen
+        self._last_action = None
+        self.final_step_only = final_step_only
+        self.augment_reward = augment_reward
+        self.rew_fn = rew_fn
+        print('DistRewardWrapper is deprecated, use CubeRewardWrapper instead')
+
+    @property
+    def target_dist(self):
+        target_dist = self._target_dist
+        if target_dist is None:
+            if isinstance(self.initializer, CurriculumInitializer):
+                _, target_dist = self.initializer.goal_sample_radius
+                target_dist = 2 * target_dist  # use sample diameter
+            else:
+                target_dist = move_cube._ARENA_RADIUS
+        return target_dist
+
+    @property
+    def difficulty(self):
+        return self.unwrapped.initializer.difficulty
+
+    def reset(self, **reset_kwargs):
+        self._last_action = None
+        return super(DistRewardWrapper, self).reset(**reset_kwargs)
+
+    def step(self, action):
+        self._last_action = action
+        observation, reward, done, info = self.env.step(action)
+        if self.final_step_only and done:
+            return observation, reward, done, info
+        else:
+            return observation, self.reward(reward, info), done, info
+
+    def reward(self, reward, info):
+        final_dist = self.compute_goal_dist(info)
+        if self.rew_fn == 'lin':
+            rew = self._dist_coef * (1 - final_dist/self.target_dist)
+            if self.info['difficulty'] == 4:
+                rew += self._ori_coef * (1 - self.compute_orientation_error())
+        elif self.rew_fn == 'exp':
+            rew = self._dist_coef * np.exp(-final_dist/self.target_dist)
+            if self.info['difficulty'] == 4:
+                rew += self._ori_coef * np.exp(-self.compute_orientation_error())
+        if self.augment_reward:
+            rew += reward
+        if self._ac_norm_pen:
+            rew -= np.linalg.norm(self._last_action) * self._ac_norm_pen
+        return rew
+
+    def get_goal_object_pose(self):
+        goal_pose = self.unwrapped.goal
+        if not isinstance(goal_pose, move_cube.Pose):
+            goal_pose = move_cube.Pose.from_dict(goal_pose)
+        cube_state = self.unwrapped.platform.cube.get_state()
+        object_pose = move_cube.Pose(
+                np.asarray(cube_state[0]).flatten(),
+                np.asarray(cube_state[1]).flatten())
+        return goal_pose, object_pose
+
+    def compute_orientation_error(self, scale=True):
+        goal_pose, object_pose = self.get_goal_object_pose()
+        orientation_error = compute_orientation_error(goal_pose, object_pose,
+                                                      scale=scale, difficulty=self.difficulty)
+        return orientation_error
+
+    def compute_goal_dist(self, info):
+        goal_pose, object_pose = self.get_goal_object_pose()
+        pos_idx = 3 if info['difficulty'] > 3 else 2
+        goal_dist = np.linalg.norm(object_pose.position[:pos_idx] -
+                                   goal_pose.position[:pos_idx])
+        return goal_dist
+
+
 class CubeRewardWrapper(gym.Wrapper):
     def __init__(self, env, target_dist=0.195, pos_coef=1., ori_coef=0.,
                  goal_env=False, ac_norm_pen=0.2, rew_fn='exp'):

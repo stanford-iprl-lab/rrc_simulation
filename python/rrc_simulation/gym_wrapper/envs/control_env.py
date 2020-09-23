@@ -27,7 +27,7 @@ class ResidualPolicyWrapper(ObservationWrapper):
         self._action_space = Dict({
             'torque': spaces.robot_torque.gym, 'position': spaces.robot_position.gym})
         self.set_policy(policy)
-        
+
     @property
     def action_space(self):
         if self.mode == PolicyMode.IMPEDANCE:
@@ -41,19 +41,26 @@ class ResidualPolicyWrapper(ObservationWrapper):
             return ActionType.TORQUE
         else:
             return ActionType.POSITION
-    
+
     @property
     def mode(self):
         assert self.policy, 'Need to first call self.set_policy() to access mode'
         return self.policy.mode
 
+    def frameskip(self):
+        if self.mode == PolicyMode.RL_ONLY:
+            return self.policy.rl_frameskip
+        return 1
+
     def set_policy(self, policy):
         self.policy = policy
-        self.rl_observation_names = policy.observation_names
-        self.rl_observation_space = policy.rl_observation_space
-        self.observation_space = Dict({'impedance': self.env.observation_space,
-                                       'rl': self.rl_observation_space})
-        
+        if policy:
+            self.rl_observation_names = policy.observation_names
+            self.rl_observation_space = policy.rl_observation_space
+            self.observation_space = Dict(
+                    {'impedance': self.env.observation_space,
+                     'rl': self.rl_observation_space})
+
     def observation(self, observation):
         observation_rl = self.process_observation_rl(observation)
         observation_imp = self.process_observation_impedance(observation)
@@ -61,7 +68,7 @@ class ResidualPolicyWrapper(ObservationWrapper):
 
     def process_observation_residual(self, observation):
         return observation
-    
+
     def process_observation_rl(self, observation):
         if len(self.platform._action_log['actions']):
             t = self.platform._action_log['actions'][-1]['t']
@@ -91,6 +98,7 @@ class ResidualPolicyWrapper(ObservationWrapper):
 
     def reset(self):
         obs = self.env.reset()
+        self.step_count = 0
         return self.observation(obs)
 
     def _step(self, action):
@@ -102,18 +110,18 @@ class ResidualPolicyWrapper(ObservationWrapper):
                 "Given action is not contained in the action space."
             )
 
-        num_steps = self.unwrapped.frameskip
+        num_steps = self.frameskip
 
         # ensure episode length is not exceeded due to frameskip
-        step_count_after = self.unwrapped.step_count + num_steps
+        step_count_after = self.step_count + num_steps
         if step_count_after > move_cube.episode_length:
             excess = step_count_after - move_cube.episode_length
             num_steps = max(1, num_steps - excess)
 
         reward = 0.0
         for _ in range(num_steps):
-            self.unwrapped.step_count += 1
-            if self.unwrapped.step_count > move_cube.episode_length:
+            self.step_count += 1
+            if self.step_count > move_cube.episode_length:
                 raise RuntimeError("Exceeded number of steps for one episode.")
 
             # send action to robot
@@ -131,15 +139,15 @@ class ResidualPolicyWrapper(ObservationWrapper):
                 self.unwrapped.info,
             )
 
-        is_done = self.unwrapped.step_count == move_cube.episode_length
+        is_done = self.step_count == move_cube.episode_length
 
         return observation, reward, is_done, self.unwrapped.info
-    
+
     def _gym_action_to_robot_action(self, gym_action):
         if self.action_type == ActionType.TORQUE:
             robot_action = self.platform.Action(torque=gym_action)
         elif self.action_type == ActionType.POSITION:
-            robot_action = self.platform.Action(position=gym_action) 
+            robot_action = self.platform.Action(position=gym_action)
         else:
             raise ValueError("Invalid action_type")
 
