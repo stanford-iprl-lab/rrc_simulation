@@ -10,6 +10,7 @@ import numpy as np
 
 from gym.spaces import Dict
 from rrc_simulation import trifinger_platform, sample, visual_objects
+from rrc_simulation.run_rrc_sb import *
 from rrc_simulation.control import control_trifinger_platform
 from rrc_simulation.control.custom_pinocchio_utils import CustomPinocchioUtils
 from rrc_simulation.control.controller_utils import *
@@ -183,7 +184,7 @@ class HierarchicalControllerPolicy(ImpedanceControllerPolicy):
         self.platform = None
         self.init_traj = False
 
-    def load_policy(load_dir, load_itr):
+    def load_policy(self, load_dir, load_itr):
         if osp.exists(load_dir) and 'pyt_save' in os.listdir(load_dir):
             self.lood_spinup_policy(load_dir, load_itr)
         else:

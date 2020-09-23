@@ -25,6 +25,7 @@ evaluate the actual performance of the policy.
 import sys
 import os
 import os.path as osp
+import pickle
 
 import gym
 import numpy as np
@@ -88,13 +89,12 @@ def main():
 
     # TODO: Replace this with your model
     # Note: You may also use a different policy for each difficulty level (difficulty)
-    if difficulty in [2, 3]:
-        # policy = ImpedanceControllerPolicy(action_space=env.action_space,
-        #             initial_pose=initial_pose, goal_pose=goal_pose)
-        policy = HierarchicalControllerPolicy(action_space=env.action_space,
-                    initial_pose=initial_pose, goal_pose=goal_pose,
-                    load_dir='./push_reorient/push_reorient_s0')
-        env = ResidualPolicyWrapper(env, policy)
+    if difficulty in [1,2,3,4]:
+        policy = ImpedenceControllerPolicy(action_space=env.action_space,
+                initial_pose=initial_pose, goal_pose=goal_pose)
+        # policy = HierarchicalControllerPolicy(action_space=env.action_space,
+        #            initial_pose=initial_pose, goal_pose=goal_pose,
+        #            load_dir='./push_reorient/push_reorient_s0')
     else:
         policy = RandomPolicy(env.action_space)
 
@@ -124,20 +124,32 @@ def main():
 
     # If the final score is less than some desired threshold
     # Rename file and also store in the failed_samples directory
-    accumulated_reward_thresh = 0
+    accumulated_reward_thresh = -400
     failed_dir = './output/failed_samples'
     if accumulated_reward < accumulated_reward_thresh:
-        old_filedir = osp.split(output_file)[0].replace('./', '').replace('output/', '').strip('/')
+        old_filedir = osp.split(output_file)[0].replace('output/', '').strip('/')
+        sample_info = osp.splitext(osp.split(output_file)[1])[0].replace('action_log_','')
         i = 0
-        filepath = lambda: osp.join(failed_dir, '{}-{}.pkl'.format(old_filedir, i))
+        filepath = lambda: osp.join(failed_dir, '{}_{}_s{}.pkl'.format(old_filedir,sample_info,i))
         while osp.exists(filepath()): i += 1
         filepath = filepath()
 
-        env.platform._action_log['goal_object_pose'] = goal_pose.to_dict()
-        with open(filepath, 'wb') as fh:
-            pickle.dump(env.platfrom._action_log, fh)
-        env.platform.store_action_log(filepath)
+        env.platform._action_log["final_accum_reward"] = accumulated_reward
+        env.platform._action_log["goal_object_pose"] = {
+                "position": goal_pose.position.tolist(),
+                "orientation": goal_pose.orientation.tolist(),
+                }
+        env.platform._action_log["final_dist_to_goal"] = dist_to_goal
 
+        print("Saving failed sample to: {}".format(filepath))
+        with open(filepath, "wb") as fh:
+            pickle.dump(env.platform._action_log, fh)
+
+        #with open(filepath, "rb") as fh:
+        #    log = pickle.load(fh)
+        #print("goal pose: ")
+        #print(log['goal_object_pose'])
+        #print(log['final_dist_to_goal'])
 
 if __name__ == "__main__":
     main()
