@@ -501,17 +501,18 @@ class SparseCubeEnv(CubeEnv):
 
 @configurable(pickleable=True)
 class TaskSpaceWrapper(gym.ActionWrapper):
-    def __init__(self, env, goal_env=False, scale=.005):
+    def __init__(self, env, goal_env=False, scale=.008, ac_pen=0.001):
         super(TaskSpaceWrapper, self).__init__(env)
         assert self.unwrapped.action_type == ActionType.TORQUE, ''
         spaces = TriFingerPlatform.spaces
         self.goal_env = goal_env
         self.action_space = gym.spaces.Box(
-                low=np.array([-np.ones_like(spaces.object_position.low)] * 3),
-                high=np.array([np.ones_like(spaces.object_position.high)] * 3)
+                low=np.array([-np.ones_like(spaces.object_position.low)] * 3).flatten(),
+                high=np.array([np.ones_like(spaces.object_position.high)] * 3).flatten()
                 )
         self.scale = scale
         self.pinocchio_utils = None
+        self.ac_pen = ac_pen
 
     def reset(self):
         obs = super(TaskSpaceWrapper, self).reset()
@@ -523,8 +524,11 @@ class TaskSpaceWrapper(gym.ActionWrapper):
         self._prev_obs = obs
         return obs
 
-    def get_pos_vel(obs):
-        return obs['observation']['position']
+    def step(self, action):
+        o, r, d, i = super(TaskSpaceWrapper, self).step(action)
+        self._prev_obs = o
+        r += self.ac_pen * np.linalg.norm(self.action(action))
+        return o, r, d, i
 
     def action(self, action):
         obs = self._prev_obs
@@ -533,10 +537,10 @@ class TaskSpaceWrapper(gym.ActionWrapper):
             obs, poskey, velkey = obs['observation'], 'position', 'velocity'
         current_position, current_velocity = obs[poskey], obs[velkey]
 
-        if self.goal_env:
-            fingertip_goals = self.pinocchio_utils(current_position.flatten())
+        fingertip_goals = self.pinocchio_utils.forward_kinematics(current_position.flatten())
+        fingertip_goals = np.asarray(fingertip_goals)
 
-        fingertip_goals = fingertip_goals + self.scale * action
+        fingertip_goals = fingertip_goals + self.scale * action.reshape((3,3))
         torque, goal_reached = c_utils.impedance_controller(
                 fingertip_goals, current_position, current_velocity,
                 self.pinocchio_utils, None, 0.007)
@@ -548,7 +552,7 @@ class TaskSpaceWrapper(gym.ActionWrapper):
 @configurable(pickleable=True)
 class ReorientWrapper(gym.Wrapper):
     def __init__(self, env, goal_env=True, rew_bonus=REW_BONUS,
-                 dist_thresh=DIST_THRESH, ori_thresh=ORI_THRESH):
+                 dist_thresh=0.09, ori_thresh=np.pi/6):
         super(ReorientWrapper, self).__init__(env)
         if not isinstance(self.unwrapped.initializer, ReorientInitializer):
             initializer = ReorientInitializer(initial_dist=0.1)
@@ -576,7 +580,7 @@ class ReorientWrapper(gym.Wrapper):
                          orientation=observation['object_orientation']))
 
         obj_dist = np.linalg.norm(obj_pose.position - goal_pose.position)
-        ori_dist = compute_orientation_error(goal_pose, obj_pose)
+        ori_dist = compute_orientation_error(goal_pose, obj_pose, quad=True)
         return obj_dist < self.dist_thresh and ori_dist < self.ori_thresh
 
 
@@ -846,8 +850,9 @@ class CubeRewardWrapper(gym.Wrapper):
     def get_goal_object_pose(self, observation):
         goal_pose = self.unwrapped.goal
         goal_pose = move_cube.Pose.from_dict(goal_pose)
-        if 'achieved_goal' not in observation:
-            observation = self.unflatten_observation(observation)
+        if not self._goal_env:
+            if not isinstance(observation, dict):
+                observation = self.unflatten_observation(observation)
             pos, ori = observation['object_position'], observation['object_orientation'],
         elif 'achieved_goal' in observation:
             pos, ori = observation['achieved_goal'][:3], observation['achieved_goal'][3:]

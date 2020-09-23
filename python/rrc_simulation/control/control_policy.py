@@ -186,13 +186,12 @@ class HierarchicalControllerPolicy(ImpedanceControllerPolicy):
 
     def load_policy(self, load_dir, load_itr):
         if osp.exists(load_dir) and 'pyt_save' in os.listdir(load_dir):
-            self.lood_spinup_policy(load_dir, load_itr)
+            self.load_spinup_policy(load_dir, load_itr)
         else:
             self.load_sb_policy(load_dir, load_itr)
 
     def load_sb_policy(self, load_dir, load_itr):
         # loads make_env, make_reorient_env, and make_model helpers
-        from rrc_simulation.run_rrc_sb import *
         assert 'HER-SAC' in load_dir, 'only configured HER-SAC policies so far'
         if '_push' in load_dir:
             self.rl_env = make_env()
@@ -224,8 +223,9 @@ class HierarchicalControllerPolicy(ImpedanceControllerPolicy):
             return False
         robot_pos, robot_vel = self.get_robot_position_velocity(observation)
         # TODO: NOT SURE IF THIS WILL WORK, hopefully will retract without bumping cube too much
-        if (np.isclose(robot_vel, np.zeros_like(robot_vel)).all()
-            and np.isclose(robot_pos, self.default_robot_position).all()):
+        if (np.isclose(np.abs(robot_vel), np.zeros_like(robot_vel)+1e-5).all()
+            and np.isclose(np.abs(robot_pos - self.default_robot_position),
+                           np.zeros_like(self.default_robot_position)+1e-5).all()):
             self.mode = PolicyMode.TRAJ_OPT
         else:
             self.mode = PolicyMode.RESET

@@ -47,6 +47,7 @@ class ResidualPolicyWrapper(ObservationWrapper):
         assert self.policy, 'Need to first call self.set_policy() to access mode'
         return self.policy.mode
 
+    @property
     def frameskip(self):
         if self.mode == PolicyMode.RL_ONLY:
             return self.policy.rl_frameskip
