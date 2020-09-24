@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import pybullet
 import os
 from tqdm import tqdm
+from scipy.spatial.transform import Rotation as R
 
 import cv2
 import numpy as np
@@ -19,12 +20,17 @@ from rrc_simulation.tasks import move_cube
 from rrc_simulation.control.custom_pinocchio_utils import CustomPinocchioUtils
 from rrc_simulation.control.controller_utils import *
 from rrc_simulation.traj_opt.fixed_contact_point_opt import FixedContactPointOpt
+from rrc_simulation.gym_wrapper.envs import custom_env
 
 num_fingers = 3
 episode_length = move_cube.episode_length
 #episode_length = 500
 
 DIFFICULTY = 2
+TEST_FLIPPING = True
+#cube_half_size = move_cube._CUBE_WIDTH/2
+cube_half_size = move_cube._CUBE_WIDTH/2 + 0.008 # Fudge the cube dimensions slightly for computing contact point positions in world frame to account for fingertip radius
+
 def main(args):
   if args.npz_file is not None:
     # Open .npz file and parse
@@ -38,24 +44,52 @@ def main(args):
     cp_params = npzfile["cp_params"]
 
   else:
-    x0 = np.array([[-0.13142379, -0.02975238, 0.0325, 0, 0, 0, 1]]) # fail mode
-    
-    x0 = np.array([[-0.1304598,0.00103245,0.0325,0,0,0.01594344,0.9998729]]) # fail mode
+    #45 degrees around x
+    theta = 0
+    theta0 = 0
+    #theta = np.pi/2
+    #theta = -np.pi/2
+    y_theta = R.from_quat(np.array([0,np.sin(theta/2), 0, np.cos(theta/2)]))
+    x_theta = R.from_quat(np.array([np.sin(theta/2),0, 0, np.cos(theta/2)]))
+    z_theta = R.from_quat(np.array([0, 0, np.sin(theta/2),np.cos(theta/2)]))
 
-    #x0 = np.array([[0.00152466,-0.00121274,0.0325,0,0,0.54988584,-0.83523983]])
+    x0 = np.array([[0.02,0.02,0.0325,0,0.707,0,0.707]])  # face 3
+    #x0 = np.array([[0.02,0.02,0.0325,0,-0.707,0,0.707]])  # face 5
+    #x0 = np.array([[0.02,0.02,0.0325,-0.707,0,0,0.707]])  # face 2
 
-    x0 = np.array([[-0.07492457,-0.02548481,0.0325,0,0,0.99868643,0.05123884]]) # fail mode
+    #x0 = np.array([[0.0,0.0,0.0325,0,0,np.sin(theta0/2),np.cos(theta0/2)]]) 
+    x_goal = np.array([[0,0,0.0325+0.05,0,0,0,1]]) 
 
-    #x0 = np.array([[-0.01271084,-0.0073533, 0.0325, 0,0,0.71904392,-0.69496463]]) #-56-
-    #x0 = np.array([[0.09967356474036665, 0.010468222675151151, 0.0325,0,0,0.3760614843238557, 0.9265947118390749]]) # -655
+    # Ground face 1
+    base_quat = R.from_quat(np.array([0.707, 0, 0, 0.707]))
+    quat = base_quat * y_theta
 
-    #x0 = np.array([[0.04609155,0.06770772,0.0325,0,0,0.39757855,0.91756814]]) #-1313
+    # Ground face 2
+    #base_quat = R.from_quat(np.array([-0.707, 0, 0, 0.707]))
+    #quat = base_quat * y_theta
 
-    x0 = np.array([[-0.0590596,0.10763319, 0.0325, 0,0,0.82239008,-0.56892403]])
+    # Ground face 3
+    #base_quat = R.from_quat(np.array([0,0.707, 0, 0.707]))
+    #quat = base_quat * x_theta
 
-    x_goal = x0.copy()
-    x_goal[0,0:3] = np.array([0, 0, 0.0825])
-    #x_goal = np.array([[0,0,0.05 + 0.0325,0,0,0,1]]) 
+    # Ground face 4
+    #base_quat = R.from_quat(np.array([0,-1, 0, 0]))
+    #quat = base_quat * z_theta
+
+    # Ground face 5
+    #base_quat = R.from_quat(np.array([0,-0.707, 0, 0.707]))
+    #quat = base_quat * x_theta
+
+    # Ground face 6
+    #z45 = R.from_quat(np.array([0,0,np.sin(theta/2),np.cos(theta/2)]))
+    #base_quat = R.from_quat(np.array([0, 0, 0, 1]))
+    #quat = base_quat * z45
+    ##x0 = np.array([[0,0,0.0325,0,0,0,1]]) 
+
+    #x0[0,3:] = quat.as_quat()
+
+    x_goal[0,3:] = quat.as_quat()
+
     nGrid = 50
     dt = 0.01
 
@@ -78,20 +112,35 @@ def main(args):
                 position=x0_pos,
                 orientation=x0_quat,
             )
+  goal_object_pose = move_cube.Pose(
+                position=x_goal[0,0:3],
+                orientation=x_goal[0,3:],
+            )
   #init_object_pose = None # Use default init pose
-
+  
   platform = trifinger_platform.TriFingerPlatform(
       visualization=args.visualize, enable_cameras=args.enable_cameras, initial_object_pose=init_object_pose
   )
 
   # Instantiate custom pinocchio utils class for access to Jacobian
   custom_pinocchio_utils = CustomPinocchioUtils(platform.simfinger.finger_urdf_path, platform.simfinger.tip_link_names) 
-  
-  if args.npz_file is None:
-    obj_pose = platform.get_object_pose(0)
+
+  if TEST_FLIPPING:
     current_position = platform.get_robot_observation(0).position
-    x_soln, l_wf_soln, cp_params = run_traj_opt(obj_pose, current_position, custom_pinocchio_utils, x0, x_goal, nGrid, dt, save_dir)
-    #x_soln, l_wf_soln, cp_params = run_traj_opt(platform, custom_pinocchio_utils, x0, x_goal, nGrid, dt, save_dir)
+    fingertips_current = custom_pinocchio_utils.forward_kinematics(current_position)
+    cp_params = get_flipping_cp_params(init_object_pose, goal_object_pose, cube_half_size)
+    x_soln = None
+    l_wf_soln = None
+  else: 
+    if args.npz_file is None:
+      obj_pose = platform.get_object_pose(0)
+      current_position = platform.get_robot_observation(0).position
+      x_soln, l_wf_soln, cp_params = run_traj_opt(obj_pose, current_position, custom_pinocchio_utils, x0, x_goal, nGrid, dt, save_dir)
+
+  #cp_params = np.array([
+  #                      [-0.7, 1, 0.7],
+  #                      [-0.7, -1, 0.7],
+  #                      [-1.6, 1, 0]])
 
   fingertip_pos_list, x_pos_list, x_quat_list, x_goal, fingertip_goal_list = run_episode(platform,
                                                                               custom_pinocchio_utils,
@@ -118,7 +167,7 @@ def run_traj_opt(obj_pose, current_position, custom_pinocchio_utils, x0, x_goal,
   cp_params = get_initial_cp_params(obj_pose, init_fingertip_pos_list)
 
   cube_shape = (move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH)
-  cube_mass = 0.02
+  cube_mass = 0.02 # TODO Hardcoded
 
   # Formulate and solve optimization problem
   opt_problem = FixedContactPointOpt(
@@ -177,11 +226,13 @@ def run_episode(platform, custom_pinocchio_utils,
 
   x0_pos = x0[0,0:3]
   x0_quat = x0[0,3:]
+  init_object_pose = move_cube.Pose(
+                position=x0_pos,
+                orientation=x0_quat,
+            )
 
-  #cube_half_size = move_cube._CUBE_WIDTH/2
-  cube_half_size = move_cube._CUBE_WIDTH/2 + 0.008 # Fudge the cube dimensions slightly for computing contact point positions in world frame to account for fingertip radius
-
-  pybullet.resetDebugVisualizerCamera(cameraDistance=1.54, cameraYaw=4.749999523162842, cameraPitch=-42.44065475463867, cameraTargetPosition=(-0.11500892043113708, 0.6501579880714417, -0.6364855170249939))
+  #pybullet.resetDebugVisualizerCamera(cameraDistance=1.54, cameraYaw=4.749999523162842, cameraPitch=-42.44065475463867, cameraTargetPosition=(-0.11500892043113708, 0.6501579880714417, -0.6364855170249939))
+  custom_env.reset_camera()
   # MP4 logging
   mp4_save_string = "./test.mp4"
   if args.save_viz_mp4:
@@ -194,15 +245,16 @@ def run_episode(platform, custom_pinocchio_utils,
   obj_pose = platform.get_object_pose(t)
 
   # Visual markers
-  #init_cps = visual_objects.Marker(number_of_goals=num_fingers, goal_size=0.008)
-  #finger_waypoints = visual_objects.Marker(number_of_goals=num_fingers, goal_size=0.008)
+  init_cps = visual_objects.Marker(number_of_goals=num_fingers, goal_size=0.008)
+  finger_waypoints = visual_objects.Marker(number_of_goals=num_fingers, goal_size=0.008)
 
   # Draw target contact points
-  target_cps_wf = get_cp_wf_list_from_cp_params(cp_params, x0_pos, x0_quat, cube_half_size)
+  #target_cps_wf = get_cp_wf_list_from_cp_params(cp_params, x0_pos, x0_quat, cube_half_size)
   #init_cps.set_state(target_cps_wf)
 
   # Get initial fingertip positions in world frame
   current_position = platform.get_robot_observation(t).position
+  fingertips_init = custom_pinocchio_utils.forward_kinematics(current_position)
 
   # Get initial contact points and waypoints to them
   finger_waypoints_list = []
@@ -218,13 +270,14 @@ def run_episode(platform, custom_pinocchio_utils,
   reward = 0
   goal_pose = move_cube.Pose(position=x_goal[0,0:3], orientation=x_goal[0,3:])
 
+  flipping_wp = None
   for timestep in tqdm(range(episode_length)):
 
     # Get joint positions        
     current_position = platform.get_robot_observation(t).position
     # Joint velocities
     current_velocity = platform.get_robot_observation(t).velocity
-
+  
     # Follow trajectory to position fingertips before moving to object
     if pre_traj_waypoint_i < len(finger_waypoints_list[0]):
       # Get fingertip goals from finger_waypoints_list
@@ -235,20 +288,24 @@ def run_episode(platform, custom_pinocchio_utils,
       tol = 0.009
       tip_forces_wf = None
     # Follow trajectory to lift object
-    elif traj_waypoint_i < nGrid:
-      fingertip_goal_list = []
-      next_cube_pos_wf = x_soln[traj_waypoint_i, 0:3]
-      next_cube_quat_wf = x_soln[traj_waypoint_i, 3:]
-
-      fingertip_goal_list = get_cp_wf_list_from_cp_params(cp_params,
-                                                          next_cube_pos_wf,
-                                                          next_cube_quat_wf,
-                                                          cube_half_size)
-      # Get target contact forces in world frame 
-      tip_forces_wf = l_wf_soln[traj_waypoint_i, :]
-      tol = 0.008
-    
-    #finger_waypoints.set_state(fingertip_goal_list)
+    else:
+      if TEST_FLIPPING:
+        fingertip_goal_list = flipping_wp
+        tip_forces_wf = None
+      else:
+        if traj_waypoint_i < nGrid:
+          fingertip_goal_list = []
+          next_cube_pos_wf = x_soln[traj_waypoint_i, 0:3]
+          next_cube_quat_wf = x_soln[traj_waypoint_i, 3:]
+          fingertip_goal_list = get_cp_wf_list_from_cp_params(cp_params,
+                                                              next_cube_pos_wf,
+                                                              next_cube_quat_wf,
+                                                              cube_half_size)
+          # Get target contact forces in world frame 
+          tip_forces_wf = l_wf_soln[traj_waypoint_i, :]
+          tol = 0.008
+        
+    finger_waypoints.set_state(fingertip_goal_list)
 
     torque, goal_reached = impedance_controller(
                                   fingertip_goal_list,
@@ -260,6 +317,10 @@ def run_episode(platform, custom_pinocchio_utils,
                                   )
 
     if goal_reached:
+      obj_pose = platform.get_object_pose(t)
+      current_position = platform.get_robot_observation(t).position
+      fingertips_current = custom_pinocchio_utils.forward_kinematics(current_position)
+      flipping_wp, flip_done = get_flipping_waypoint(platform.get_object_pose(t), goal_pose, fingertips_current, fingertips_init, cp_params)
       goal_reached = False
       if pre_traj_waypoint_i < len(finger_waypoints_list[0]):
         pre_traj_waypoint_i += 1
@@ -361,7 +422,7 @@ def plot_state(save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal, fi
 
 """ Get contact point positions in world frame from cp_params
 """
-def get_cp_wf_list_from_cp_params(cp_params, cube_pos, cube_quat, cube_half_size):
+def get_cp_wf_list_from_cp_params(cp_params, cube_pos, cube_quat, cube_half_size=cube_half_size):
   # Get contact points in wf
   fingertip_goal_list = []
   for i in range(num_fingers):

@@ -1,5 +1,3 @@
-import enum
-
 from gym.spaces import Dict
 from gym import ObservationWrapper
 from rrc_simulation.trifinger_platform import TriFingerPlatform
@@ -7,15 +5,7 @@ from rrc_simulation.gym_wrapper.envs import cube_env, custom_env
 from rrc_simulation.gym_wrapper.envs.cube_env import ActionType
 from rrc_simulation.control.custom_pinocchio_utils import CustomPinocchioUtils
 from rrc_simulation.control.controller_utils import *
-
-
-class PolicyMode(enum.Enum):
-    REACH = enum.auto()
-    RESET = enum.auto()
-    TRAJ_OPT = enum.auto()
-    IMPEDANCE = enum.auto()
-    RL_PUSH = enum.auto()
-    RESIDUAL = enum.auto()
+from rrc_simulation.control.control_policy import HierarchicalControllerPolicy
 
 
 class ResidualPolicyWrapper(ObservationWrapper):
@@ -101,6 +91,9 @@ class ResidualPolicyWrapper(ObservationWrapper):
     def reset(self):
         obs = self.env.reset()
         self.policy.platform = self.env.unwrapped.platform
+        if isinstance(self.policy, HierarchicalControllerPolicy):
+            self.policy.mode = PolicyMode.RL_PUSH
+            self.policy.traj_initialized = False
         self.step_count = 0
         return self.observation(obs)
 

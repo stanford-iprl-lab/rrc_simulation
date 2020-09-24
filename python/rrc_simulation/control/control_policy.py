@@ -16,7 +16,7 @@ from rrc_simulation.control.custom_pinocchio_utils import CustomPinocchioUtils
 from rrc_simulation.control import controller_utils as c_utils
 from rrc_simulation import visual_objects
 from rrc_simulation.gym_wrapper.envs.custom_env import reset_camera
-from rrc_simulation.gym_wrapper.envs.control_env import PolicyMode
+from rrc_simulation.control.controller_utils import PolicyMode
 from spinup.utils.test_policy import load_policy_and_env
 
 
@@ -74,10 +74,11 @@ class ImpedanceControllerPolicy:
 
     def set_waypoints(self, platform, observation):
         self.step_count = 0
+        self.platform = platform
         self.custom_pinocchio_utils = CustomPinocchioUtils(
                 platform.simfinger.finger_urdf_path,
                 platform.simfinger.tip_link_names)
-        custom_env.reset_camera()
+        reset_camera()
 
       # Get object pose
         obj_pose = get_pose_from_observation(observation)
@@ -123,8 +124,7 @@ class ImpedanceControllerPolicy:
         self.step_count += 1
         observation = observation['observation']
         current_position, current_velocity = observation['position'], observation['velocity']
-        object_pose = move_cube.Pose(observation['object_position'],
-                                     observation['object_orientation'])
+        object_pose = self.platform.get_object_pose(self.platform._action_log['actions'][-1]['t'])
         if self.pre_traj_waypoint_i < len(self.finger_waypoints_list[0]):
             # Get fingertip goals from finger_waypoints_list
             self.fingertip_goal_list = []
@@ -183,7 +183,7 @@ class HierarchicalControllerPolicy:
 
     def __init__(self, action_space=None, initial_pose=None, goal_pose=None,
                  npz_file=None, load_dir='', load_itr='last',
-                 start_mode=PolicyMode.REACH, difficulty=1):
+                 start_mode=PolicyMode.RL_PUSH, difficulty=1):
         self.full_action_space = action_space
         action_space = action_space['torque']
         self.impedance_controller = ImpedanceControllerPolicy(
@@ -245,14 +245,10 @@ class HierarchicalControllerPolicy:
         elif self.mode == PolicyMode.RL_PUSH:
             self.mode = PolicyMode.RESET
             return False
-        elif self.mode == PolicyMode.RESET and self.steps_from_reset == 30:
+        elif self.mode == PolicyMode.RESET and self.steps_from_reset >= 30:
             self.mode = PolicyMode.TRAJ_OPT
             self.steps_from_reset = 0
         return True
-
-    def flip_needed(self, init_pose, goal_pose):
-        return (c_utils.get_closest_ground_face(init_pose) ==
-                c_utils.get_closest_ground_face(goal_pose))
 
     def set_waypoints(self, observation):
         if self.mode == PolicyMode.TRAJ_OPT:
@@ -260,7 +256,7 @@ class HierarchicalControllerPolicy:
             goal_pose = get_pose_from_observation(observation, goal_pose=True)
             if self.difficulty == 4:
                 self.impedance_controller.set_init_goal(
-                        observation, flip=self.flip_needed(init_pose, goal_pose))
+                        init_pose, goal_pose, flip=flip_needed(init_pose, goal_pose))
             else:
                 self.impedance_controller.set_init_goal(init_pose, goal_pose)
             self.impedance_controller.set_waypoints(self.platform, observation)
@@ -271,15 +267,9 @@ class HierarchicalControllerPolicy:
         if not self.traj_initialized and self.initialize_traj_opt(observation['impedance']):
             self.set_waypoints(observation['impedance'])
 
-        if self.traj_initialized and self.mode == PolicyMode.TRAJ_OPT:
-            init_pose = get_pose_from_observation(observation)
-            goal_pose = get_pose_from_observation(observation, goal_pose=True)
-            self.impedance_controller.set_init_goal(init_pose, goal_pose)
-            self.impedance_controller.set_waypoints(self.platform, observation)
-            self.mode = PolicyMode.IMPEDANCE
-
         if self.mode == PolicyMode.RESET:
             ac = self.default_robot_position
+            self.steps_from_reset += 1
         elif self.mode == PolicyMode.IMPEDANCE:
             ac = self.impedance_controller.predict(observation['impedance'])
         elif self.mode == PolicyMode.RL_PUSH:
@@ -293,6 +283,10 @@ def get_pose_from_observation(observation, goal_pose=False):
     key = 'achieved_goal' if not goal_pose else 'desired_goal'
     return move_cube.Pose.from_dict(observation[key])
 
+
+def flip_needed(init_pose, goal_pose):
+    return (c_utils.get_closest_ground_face(init_pose) !=
+            c_utils.get_closest_ground_face(goal_pose))
 
 def get_robot_position_velocity(observation):
     observation = observation['observation']
