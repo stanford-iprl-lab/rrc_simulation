@@ -145,11 +145,6 @@ def main():
         with open(filepath, "wb") as fh:
             pickle.dump(env.platform._action_log, fh)
 
-        #with open(filepath, "rb") as fh:
-        #    log = pickle.load(fh)
-        #print("goal pose: ")
-        #print(log['goal_object_pose'])
-        #print(log['final_dist_to_goal'])
 
 if __name__ == "__main__":
     main()

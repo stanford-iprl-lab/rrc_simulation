@@ -28,12 +28,14 @@ DIST_THRESH = move_cube._CUBE_WIDTH / 5
 ORI_THRESH = np.pi / 8
 REW_BONUS = 0.5
 
-camera_pos = (0.,0.2,-0.2)
-camera_dist = 1.0
-pitch = -45.
-yaw = 0.
 
-reset_camera = lambda: pybullet.resetDebugVisualizerCamera(cameraDistance=camera_dist,
+def reset_camera():
+    camera_pos = (0.,0.2,-0.2)
+    camera_dist = 1.0
+    pitch = -45.
+    yaw = 0.
+    if pybullet.isConnected() != 0:
+        pybullet.resetDebugVisualizerCamera(cameraDistance=camera_dist,
                                     cameraYaw=yaw,
                                     cameraPitch=pitch,
                                     cameraTargetPosition=camera_pos)

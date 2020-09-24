@@ -10,10 +10,11 @@ from rrc_simulation.control.controller_utils import *
 
 
 class PolicyMode(enum.Enum):
+    REACH = enum.auto()
     RESET = enum.auto()
     TRAJ_OPT = enum.auto()
     IMPEDANCE = enum.auto()
-    RL_ONLY = enum.auto()
+    RL_PUSH = enum.auto()
     RESIDUAL = enum.auto()
 
 
@@ -49,7 +50,7 @@ class ResidualPolicyWrapper(ObservationWrapper):
 
     @property
     def frameskip(self):
-        if self.mode == PolicyMode.RL_ONLY:
+        if self.mode == PolicyMode.RL_PUSH:
             return self.policy.rl_frameskip
         return 1
 
@@ -99,6 +100,7 @@ class ResidualPolicyWrapper(ObservationWrapper):
 
     def reset(self):
         obs = self.env.reset()
+        self.policy.platform = self.env.unwrapped.platform
         self.step_count = 0
         return self.observation(obs)
 
@@ -156,7 +158,7 @@ class ResidualPolicyWrapper(ObservationWrapper):
 
     def step(self, action):
         # CubeEnv handles gym_action_to_robot_action
-        if self.mode == PolicyMode.RL_ONLY:
+        if self.mode == PolicyMode.RL_PUSH:
             self.unwrapped.frameskip = self.policy.rl_frameskip
         else:
             self.unwrapped.frameskip = 1
