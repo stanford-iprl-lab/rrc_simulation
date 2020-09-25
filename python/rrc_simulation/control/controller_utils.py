@@ -353,11 +353,11 @@ def get_initial_cp_params(obj_pose, fingertip_pos_list):
   for i in range(3):
     face = assigned_faces[i]
     param = OBJ_FACES_INFO[face]["center_param"].copy()
-    print(i)
-    print(param)
+    #print(i)
+    #print(param)
     cp_params.append(param)
-  print("assigning cp params for lifting")
-  print(cp_params)
+  #print("assigning cp params for lifting")
+  #print(cp_params)
   return cp_params
 
 """
@@ -407,7 +407,7 @@ def get_waypoints_to_cp_param(obj_pose, fingertip_pos, cp_param, cube_half_size=
 
     # Work with absolute values, and then correct sign at the end
     w = np.expand_dims(fingertip_pos_of,0)
-    w[0,:] = 0.06 * OBJ_FACES_INFO[ground_face]["up_axis"] # Bring fingers lower, to avoid links colliding with each other
+    w[0,:] = 0.08 * OBJ_FACES_INFO[ground_face]["up_axis"] # Bring fingers lower, to avoid links colliding with each other
     if abs(fingertip_pos_of[non_zero_dim]) < abs(cp_pos_of[non_zero_dim]) + tol:
       w[0,non_zero_dim] = cp_param[non_zero_dim] * (abs(cp_pos_of[non_zero_dim]) + tol) # fix sign
     if abs(fingertip_pos_of[zero_dim]) < abs(cp_pos_of[zero_dim]) + tol:
@@ -510,7 +510,7 @@ def get_flipping_cp_params(
   if goal_face not in OBJ_FACES_INFO[init_face]["adjacent_faces"]:
     print("Goal face not adjacent to initial face")
     goal_face = OBJ_FACES_INFO[init_face]["adjacent_faces"][0]
-    print(goal_face)
+    print("Intermmediate goal face: {}".format(goal_face))
 
   # Common adjacent faces to init_face and goal_face
   common_adjacent_faces = list(set(OBJ_FACES_INFO[init_face]["adjacent_faces"]). intersection(OBJ_FACES_INFO[goal_face]["adjacent_faces"]))
@@ -541,7 +541,6 @@ def get_flipping_cp_params(
     
     xy_distances[f_i, 0] = np.sign(f_of[0,y_ind]) * x_dist
     xy_distances[f_i, 1] = np.sign(f_of[0,x_ind]) * y_dist
-  print(xy_distances)
 
   finger_assignments = {}
   for face in common_adjacent_faces:
@@ -572,8 +571,7 @@ def get_flipping_cp_params(
     param += OBJ_FACES_INFO[opposite_goal_face]["center_param"] * width_param
     cp_params[finger_assignments[face]] = param
     #cp_params.append(param)
-  print("Assignments: {}".format(finger_assignments))
-  print(cp_params)
+  #print("Assignments: {}".format(finger_assignments))
   return cp_params, init_face, goal_face
 
 """
@@ -618,6 +616,7 @@ def get_flipping_waypoint(
         f_new_of = f_of - 0.01 * OBJ_FACES_INFO[face]["up_axis"]
         if obj_pose.position[2] <= 0.034: # TODO: HARDCODED
           flip_done = True
+          print("FLIP SUCCESSFUL!")
         else:
           flip_done = False
       elif ground_face != init_face:
