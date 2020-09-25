@@ -137,7 +137,7 @@ class FixedContactPointOpt:
     # Slack variable penalties
     for i in range(a.shape[0]):
       if i < 3:
-        cost += a[i] * 10 # Position of object
+        cost += a[i] * 1 # Position of object
       else:
         cost += a[i] * 1 # Orientation of object
 
