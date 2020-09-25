@@ -39,7 +39,6 @@ from rrc_simulation.control.control_policy import HierarchicalControllerPolicy
 from rrc_simulation.control.controller_utils import PolicyMode
 from spinup.utils import rrc_utils
 
-
 class RandomPolicy:
     """Dummy policy which uses random actions."""
 
@@ -51,6 +50,7 @@ class RandomPolicy:
 
 
 def main():
+    eval_keys = ['is_success', 'is_success_ori', 'final_ori_dist', 'final_dist','final_score']
     try:
         difficulty = int(sys.argv[1])
         initial_pose_json = sys.argv[2]
@@ -94,8 +94,10 @@ def main():
     if difficulty in [1,2,3,4]:
         #policy = ImpedanceControllerPolicy(action_space=env.action_space,
         #        initial_pose=initial_pose, goal_pose=goal_pose)
-        # rl_load_dir, start_mode = './models/push_reorient/push_reorient_s0', PolicyMode.RL_PUSH
+        #rl_load_dir, start_mode = './models/push_reorient/push_reorient_s0', PolicyMode.RL_PUSH
         rl_load_dir, start_mode = '', PolicyMode.TRAJ_OPT
+        print("Initial pose: position {} orientation {}".format(initial_pose.position, initial_pose.orientation))
+        print("Goal pose: position {} orientation {}".format(goal_pose.position, goal_pose.orientation))
         print(env.action_space)
         policy = HierarchicalControllerPolicy(action_space=env.action_space,
                    initial_pose=initial_pose, goal_pose=goal_pose,
@@ -111,7 +113,7 @@ def main():
 
     is_done = False
     env = custom_env.LogInfoWrapper(ResidualPolicyWrapper(env, policy),
-                                    info_keys=rrc_utils.eval_keys)
+                                    info_keys=eval_keys)
     obs = env.reset()
 
     old_mode = policy.mode
@@ -136,26 +138,26 @@ def main():
 
     # If the final score is less than some desired threshold
     # Rename file and also store in the failed_samples directory
-    accumulated_reward_thresh = -400
-    failed_dir = './output/failed_samples'
-    if accumulated_reward < accumulated_reward_thresh:
-        old_filedir = osp.split(output_file)[0].replace('output/', '').strip('/')
-        sample_info = osp.splitext(osp.split(output_file)[1])[0].replace('action_log_','')
-        i = 0
-        filepath = lambda: osp.join(failed_dir, '{}_{}_s{}.pkl'.format(old_filedir,sample_info,i))
-        while osp.exists(filepath()): i += 1
-        filepath = filepath()
+    #accumulated_reward_thresh = -400
+    #failed_dir = './output/failed_samples'
+    #if accumulated_reward < accumulated_reward_thresh:
+    #    old_filedir = osp.split(output_file)[0].replace('output/', '').strip('/')
+    #    sample_info = osp.splitext(osp.split(output_file)[1])[0].replace('action_log_','')
+    #    i = 0
+    #    filepath = lambda: osp.join(failed_dir, '{}_{}_s{}.pkl'.format(old_filedir,sample_info,i))
+    #    while osp.exists(filepath()): i += 1
+    #    filepath = filepath()
 
-        env.platform._action_log["final_accum_reward"] = accumulated_reward
-        env.platform._action_log["goal_object_pose"] = {
-                "position": goal_pose.position.tolist(),
-                "orientation": goal_pose.orientation.tolist(),
-                }
-        env.platform._action_log["final_dist_to_goal"] = dist_to_goal
+    #    env.platform._action_log["final_accum_reward"] = accumulated_reward
+    #    env.platform._action_log["goal_object_pose"] = {
+    #            "position": goal_pose.position.tolist(),
+    #            "orientation": goal_pose.orientation.tolist(),
+    #            }
+    #    env.platform._action_log["final_dist_to_goal"] = dist_to_goal
 
-        print("Saving failed sample to: {}".format(filepath))
-        with open(filepath, "wb") as fh:
-            pickle.dump(env.platform._action_log, fh)
+    #    print("Saving failed sample to: {}".format(filepath))
+    #    with open(filepath, "wb") as fh:
+    #        pickle.dump(env.platform._action_log, fh)
 
 
 if __name__ == "__main__":
