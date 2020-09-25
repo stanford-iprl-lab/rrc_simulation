@@ -35,6 +35,7 @@ class ImpedanceControllerPolicy:
         self.done_with_primitive = True
         self.init_face = None
         self.goal_face = None
+        self.platform = None
         self.step_count = 0 # To keep track of time spent reaching 1 waypoint
         self.max_step_count = 200
 
@@ -77,12 +78,11 @@ class ImpedanceControllerPolicy:
         self.dt        = npzfile["dt"]
         self.cp_params = npzfile["cp_params"]
 
-    def set_waypoints(self, platform, observation):
+    def set_waypoints(self, observation):
         self.step_count = 0
-        self.platform = platform
         self.custom_pinocchio_utils = CustomPinocchioUtils(
-                platform.simfinger.finger_urdf_path,
-                platform.simfinger.tip_link_names)
+                self.platform.simfinger.finger_urdf_path,
+                self.platform.simfinger.tip_link_names)
         reset_camera()
 
       # Get object pose
@@ -109,12 +109,12 @@ class ImpedanceControllerPolicy:
 
         if self.debug_waypoints:
             # Visual markers
-            #init_cps = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
+            init_cps = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
             self.finger_waypoints = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
 
             # Draw target contact points
-            #target_cps_wf = control_trifinger_platform.get_cp_wf_list_from_cp_params(self.cp_params, self.x0_pos, self.x0_quat)
-            #init_cps.set_state(target_cps_wf)
+            target_cps_wf = control_trifinger_platform.get_cp_wf_list_from_cp_params(self.cp_params, self.x0_pos, self.x0_quat)
+            init_cps.set_state(target_cps_wf)
 
         # Get initial contact points and waypoints to them
         self.finger_waypoints_list = []
@@ -131,7 +131,10 @@ class ImpedanceControllerPolicy:
         self.step_count += 1
         observation = observation['observation']
         current_position, current_velocity = observation['position'], observation['velocity']
-        object_pose = self.platform.get_object_pose(self.platform._action_log['actions'][-1]['t'])
+        if len(self.platform._action_log['actions']) > 0:
+            object_pose = self.platform.get_object_pose(self.platform._action_log['actions'][-1]['t'])
+        else:
+            object_pose = self.platform.get_object_pose(0)
         if self.pre_traj_waypoint_i < len(self.finger_waypoints_list[0]):
             # Get fingertip goals from finger_waypoints_list
             self.fingertip_goal_list = []
@@ -195,13 +198,13 @@ class HierarchicalControllerPolicy:
 
     def __init__(self, action_space=None, initial_pose=None, goal_pose=None,
                  npz_file=None, load_dir='', load_itr='last',
-                 start_mode=PolicyMode.RL_PUSH, difficulty=1):
+                 start_mode=PolicyMode.RL_PUSH, difficulty=1, deterministic=False):
         self.full_action_space = action_space
         action_space = action_space['torque']
         self.impedance_controller = ImpedanceControllerPolicy(
                 action_space, initial_pose, goal_pose, npz_file)
-        self.load_policy(load_dir, load_itr)
-        self.mode = start_mode
+        self.load_policy(load_dir, load_itr, deterministic)
+        self.mode = self.start_mode = start_mode
         self.steps_from_reset = 0
         self._platform = None
         self.traj_initialized = False
@@ -216,16 +219,16 @@ class HierarchicalControllerPolicy:
     def platform(self, platform):
         assert platform is not None, 'platform is not yet initialized'
         self._platform = platform
+        self.impedance_controller.platform = platform
 
-    def load_policy(self, load_dir, load_itr):
+    def load_policy(self, load_dir, load_itr, deterministic=False):
         self.observation_names = []
         if not load_dir:
-            print("not loading")
             self.rl_frameskip = 1
             self.rl_observation_space = None
-            self.policy = lambda obs: self.impedance_controller.predict(obs['impedance'])   
+            self.rl_policy = lambda obs: self.impedance_controller.predict(obs)
         elif osp.exists(load_dir) and 'pyt_save' in os.listdir(load_dir):
-            self.load_spinup_policy(load_dir, load_itr)
+            self.load_spinup_policy(load_dir, load_itr, deterministic=deterministic)
         else:
             self.load_sb_policy(load_dir, load_itr)
 
@@ -241,9 +244,9 @@ class HierarchicalControllerPolicy:
         self.rl_observation_space = self.rl_env.observation_space
         self.sb_policy = sb_utils.make_her_sac_model(None, None)
         self.sb_policy.load(load_dir)
-        self.policy = lambda obs: self.sb_policy.predict(obs)[0]
+        self.rl_policy = lambda obs: self.sb_policy.predict(obs)[0]
 
-    def load_spinup_policy(self, load_dir, load_itr='last', deterministic=True):
+    def load_spinup_policy(self, load_dir, load_itr='last', deterministic=False):
         self.rl_env, self.rl_policy = load_policy_and_env(load_dir, load_itr, deterministic)
         if self.rl_env:
             self.rl_frameskip = self.rl_env.frameskip
@@ -258,7 +261,7 @@ class HierarchicalControllerPolicy:
         goal_pose = get_pose_from_observation(observation, goal_pose=True)
 
         # TODO: check orientation error
-        if np.linalg.norm(obj_pose.position - np.zeros(3)) > self.DIST_THRESH:
+        if np.linalg.norm(obj_pose.position - np.zeros(3)) > self.DIST_THRESH and self.start_mode == PolicyMode.RL_PUSH:
             self.mode = PolicyMode.RL_PUSH
             return False
         elif self.mode == PolicyMode.RL_PUSH:
@@ -267,6 +270,8 @@ class HierarchicalControllerPolicy:
         elif self.mode == PolicyMode.RESET and self.steps_from_reset >= 100:
             self.mode = PolicyMode.TRAJ_OPT
             self.steps_from_reset = 0
+            return True
+        elif self.mode == PolicyMode.TRAJ_OPT:
             return True
         else:
             if self.impedance_controller.done_with_primitive:
@@ -283,7 +288,7 @@ class HierarchicalControllerPolicy:
                         init_pose, goal_pose, flip=flip_needed(init_pose, goal_pose))
             else:
                 self.impedance_controller.set_init_goal(init_pose, goal_pose)
-            self.impedance_controller.set_waypoints(self.platform, observation)
+            self.impedance_controller.set_waypoints(observation)
             self.traj_initialized = True  # pre_traj_wp are initialized
             self.mode = PolicyMode.IMPEDANCE
 
@@ -298,12 +303,12 @@ class HierarchicalControllerPolicy:
             ac = self.impedance_controller.predict(observation['impedance'])
             if self.impedance_controller.done_with_primitive:
                 self.traj_initialized = False
-        elif self.mode == PolicyMode.RL_PUSH:
+        elif self.mode == PolicyMode.RL_PUSH and self.rl_observation_space is not None:
             ac = self.rl_policy(observation['rl'])
             ac = np.clip(ac, self.full_action_space['position'].low,
                          self.full_action_space['position'].high)
-
-        #print("ACTION: {}".format(ac))
+        else:
+            assert False, 'use a different start mode, started with: {}'.format(self.start_mode)
         return ac
 
 

@@ -536,7 +536,7 @@ class TaskSpaceWrapper(gym.ActionWrapper):
         if self.relative:
             r -= self.ac_pen * np.linalg.norm(action)
         else:
-            r -= self.ac_pen * np.linalg.norm(self._last_action - self._action)
+            r -= self.ac_pen * np.linalg.norm(self._last_action - action)
         self._last_action =  action
         return o, r, d, i
 
@@ -951,8 +951,8 @@ class LogInfoWrapper(gym.Wrapper):
                     initializer = self.unwrapped.initializer
                     sample_radius = np.linalg.norm(initializer.goal_pose.position[:2])
                     i[k] = sample_radius
-
-        return o, r, d, i
+        self.info = i
+        return o, r, d, self.info
 
 
 def compute_orientation_error(goal_pose, actual_pose, scale=False,

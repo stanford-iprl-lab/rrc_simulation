@@ -36,6 +36,8 @@ from rrc_simulation.gym_wrapper.envs import control_env, custom_env
 from rrc_simulation.gym_wrapper.envs.control_env import ResidualPolicyWrapper
 from rrc_simulation.control.control_policy import ImpedanceControllerPolicy
 from rrc_simulation.control.control_policy import HierarchicalControllerPolicy
+from rrc_simulation.control.controller_utils import PolicyMode
+from spinup.utils import rrc_utils
 
 
 class RandomPolicy:
@@ -84,7 +86,7 @@ def main():
         "rrc_simulation.gym_wrapper:real_robot_challenge_phase_1-v1",
         initializer=initializer,
         action_type=action_type,
-        visualization=True,
+        visualization=False,
     )
 
     # TODO: Replace this with your model
@@ -92,9 +94,13 @@ def main():
     if difficulty in [1,2,3,4]:
         #policy = ImpedanceControllerPolicy(action_space=env.action_space,
         #        initial_pose=initial_pose, goal_pose=goal_pose)
+        # rl_load_dir, start_mode = './models/push_reorient/push_reorient_s0', PolicyMode.RL_PUSH
+        rl_load_dir, start_mode = '', PolicyMode.TRAJ_OPT
+        print(env.action_space)
         policy = HierarchicalControllerPolicy(action_space=env.action_space,
                    initial_pose=initial_pose, goal_pose=goal_pose,
-                   load_dir='', difficulty=difficulty)
+                   load_dir=rl_load_dir, difficulty=difficulty,
+                   start_mode=start_mode)
     else:
         policy = RandomPolicy(env.action_space)
 
@@ -104,23 +110,25 @@ def main():
     # sure to adjust this in case your custom environment behaves differently!
 
     is_done = False
-    observation = env.reset()
+    env = custom_env.LogInfoWrapper(ResidualPolicyWrapper(env, policy),
+                                    info_keys=rrc_utils.eval_keys)
+    obs = env.reset()
 
-    if isinstance(policy, (HierarchicalControllerPolicy)):
-        env = ResidualPolicyWrapper(env, policy)
-        obs, done = env.reset(), False
-        old_mode = policy.mode
-        custom_env.reset_camera()
-    #    policy.set_waypoints(env.platform, observation)
+    old_mode = policy.mode
+    print('starting mode: {}'.format(policy.mode))
+    custom_env.reset_camera()
     accumulated_reward = 0
+
     while not is_done:
-        action = policy.predict(observation)
-        observation, reward, is_done, info = env.step(action)
+        action = policy.predict(obs)
+        if old_mode != policy.mode:
+            print('mode changed: {} to {}'.format(old_mode, policy.mode))
+            old_mode = policy.mode
+        obs, reward, is_done, info = env.step(action)
         accumulated_reward += reward
 
     print("Accumulated reward: {}".format(accumulated_reward))
-    dist_to_goal = np.linalg.norm(observation['desired_goal']['position'] -
-                                  observation['achieved_goal']['position'])
+    dist_to_goal = info.get('final_dist')
     print(f"Final score: {reward}, Final dist to goal: {dist_to_goal}")
 
     # store the log for evaluation
