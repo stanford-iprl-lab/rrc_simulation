@@ -21,7 +21,6 @@ FINGER_BASE_POSITIONS = [
 
 
 class PolicyMode(enum.Enum):
-    REACH = enum.auto()
     RESET = enum.auto()
     TRAJ_OPT = enum.auto()
     IMPEDANCE = enum.auto()

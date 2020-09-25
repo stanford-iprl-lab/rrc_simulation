@@ -26,7 +26,7 @@ from scipy.spatial.transform import Rotation
 MAX_DIST = move_cube._max_cube_com_distance_to_center
 DIST_THRESH = move_cube._CUBE_WIDTH / 5
 ORI_THRESH = np.pi / 8
-REW_BONUS = 0.5
+REW_BONUS = 1
 
 
 def reset_camera():
@@ -750,12 +750,13 @@ class DistRewardWrapper(gym.RewardWrapper):
 
 class CubeRewardWrapper(gym.Wrapper):
     def __init__(self, env, target_dist=0.195, pos_coef=1., ori_coef=0.,
-                 goal_env=False, ac_norm_pen=0.2, rew_fn='exp',
+                 fingertip_coef=0., goal_env=False, ac_norm_pen=0.2, rew_fn='exp',
                  augment_reward=False):
         super(CubeRewardWrapper, self).__init__(env)
         self._target_dist = target_dist  # 0.156
         self._pos_coef = pos_coef
         self._ori_coef = ori_coef
+        self._fingertip_coef = fingertip_coef
         self._goal_env = goal_env
         self._ac_norm_pen = ac_norm_pen
         self._prev_action = None
@@ -789,16 +790,47 @@ class CubeRewardWrapper(gym.Wrapper):
         if self._goal_env:
             reward = self.compute_reward(observation['achieved_goal'],
                                          observation['desired_goal'], info)
+            if self._fingertip_coef:
+                reward += self.compute_fingertip_reward(observation['observation'],
+                                                  self._prev_obs['observation'])
         else:
             goal_pose, prev_object_pose = self.get_goal_object_pose(self._prev_obs)
             goal_pose, object_pose = self.get_goal_object_pose(observation)
             reward = self._compute_reward(goal_pose, object_pose, prev_object_pose)
-
+            if self._fingertip_coef:
+                reward += self.compute_fingertip_reward(observation, self._prev_obs)
         if self._augment_reward:
             reward += r
 
         self._prev_obs = observation
         return observation, reward, done, info
+
+    def compute_fingertip_reward(self, observation, previous_observation):
+        if not isinstance(observation, dict):
+            obs_space = self.unwrapped.observation_space
+            if self._goal_env: obs_space = obs_space.spaces['observation']
+            observation = self.unflatten_observation(observation, obs_space)
+            previous_observation = self.unflatten_observation(previous_observation, obs_space)
+
+        if 'robot_tip_position' in observation:
+            prev_ftip_pos = previous_observation['robot_tip_position']
+            curr_ftip_pos = observation['robot_tip_position']
+        else:
+            prev_ftip_pos = self.platform.forward_kinematics(previous_observation['robot_position'])
+            curr_ftip_pos = self.platform.forward_kinematics(observation['robot_position'])
+
+        current_distance_from_block = np.linalg.norm(
+           curr_ftip_pos - observation["object_position"]
+        )
+        previous_distance_from_block = np.linalg.norm(
+            prev_ftip_pos
+            - previous_observation["object_position"]
+        )
+
+        step_ftip_rew = (
+            previous_distance_from_block - current_distance_from_block
+        )
+        return self._fingertip_coef * step_ftip_rew
 
     def compute_reward(self, achieved_goal, desired_goal, info):
         if isinstance(achieved_goal, dict):
@@ -850,7 +882,7 @@ class CubeRewardWrapper(gym.Wrapper):
             return 2.5 * ((pos_error < DIST_THRESH) + (ori_error < ORI_THRESH))
         return total_rew
 
-    def unflatten_observation(self, observation):
+    def unflatten_observation(self, observation, obs_space=None):
         filter_keys = []
         env = self.env
         while env != self.unwrapped:
@@ -858,7 +890,7 @@ class CubeRewardWrapper(gym.Wrapper):
                 filter_keys = env._filter_keys
             env = env.env
 
-        obs_space = self.unwrapped.observation_space
+        obs_space = obs_space or self.unwrapped.observation_space
         if isinstance(obs_space, gym.spaces.Dict):
             if filter_keys:
                 obs_space = gym.spaces.Dict({obs_space[k] for k in filter_keys})
@@ -954,6 +986,21 @@ class LogInfoWrapper(gym.Wrapper):
                     i[k] = sample_radius
         self.info = i
         return o, r, d, self.info
+
+
+class StepRewardWrapper(gym.RewardWrapper):
+    def __init__(self, env):
+        super(StepRewardWrapper, self).__init__(env)
+        self._last_rew = 0.
+
+    def reset(self):
+        self._last_rew = 0.
+        return super(StepRewardWrapper, self).reset()
+
+    def reward(self, reward):
+        step_reward = reward - self._last_rew
+        self._last_rew = reward
+        return step_reward
 
 
 def compute_orientation_error(goal_pose, actual_pose, scale=False,
