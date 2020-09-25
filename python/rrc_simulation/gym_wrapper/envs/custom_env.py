@@ -27,6 +27,8 @@ MAX_DIST = move_cube._max_cube_com_distance_to_center
 DIST_THRESH = move_cube._CUBE_WIDTH / 5
 ORI_THRESH = np.pi / 8
 REW_BONUS = 1
+POS_SCALE = np.array([0.128, 0.134, 0.203, 0.128, 0.134, 0.203, 0.128, 0.134,
+                      0.203])
 
 
 def reset_camera():
@@ -559,6 +561,60 @@ class TaskSpaceWrapper(gym.ActionWrapper):
         torque = np.clip(torque, self.unwrapped.action_space.low,
                          self.unwrapped.action_space.high)
         return torque
+
+
+@configurable(pickleable=True)
+class ScaledActionWrapper(gym.ActionWrapper):
+    def __init__(self, env, goal_env=False, relative=True, scale=POS_SCALE):
+        super(TaskSpaceWrapper, self).__init__(env)
+        assert self.unwrapped.action_type == ActionType.POSITION, 'position control only'
+        self.spaces = TriFingerPlatform.spaces
+        self.goal_env = goal_env
+        self.relative = relative
+        low = self.action_space.low
+        high = self.action_space.high
+        if relative:
+            low = -np.ones_like(low)
+            high = np.ones_like(high)
+        self.action_space = gym.spaces.Box(low=low, high=high)
+        self.scale = scale
+
+    @property
+    def pinocchio_utils(self):
+        assert self.platform, 'platform must be reset to use pinocchio'
+        return self.platform.pinocchio_utils
+
+    def reset(self):
+        obs = super(TaskSpaceWrapper, self).reset()
+        platform = self.unwrapped.platform
+        self._prev_obs = obs
+        self._last_action = np.zeros_like(self.action_space.sample())
+        return obs
+
+    def step(self, action):
+        o, r, d, i = super(TaskSpaceWrapper, self).step(action)
+        self._prev_obs = o
+        if self.relative:
+            r -= self.ac_pen * np.linalg.norm(action)
+        else:
+            r -= self.ac_pen * np.linalg.norm(self._last_action - action)
+        self._last_action =  action
+        return o, r, d, i
+
+    def action(self, action):
+        obs = self._prev_obs
+        poskey, velkey = 'robot_position', 'robot_velocity'
+        if self.goal_env:
+            obs, poskey, velkey = obs['observation'], 'position', 'velocity'
+        current_position, current_velocity = obs[poskey], obs[velkey]
+        if self.relative:
+            goal_position = current_position + self.scale * action
+        else:
+            pos_low, pos_high = self.spaces.robot_position.low, self.spaces.robot_position.high
+            pos_low = np.clip(current_position - self.scale, pos_low)
+            pos_high = np.clip(current_position + self.scale, pos_high)
+            goal_position = np.clip(action, pos_low, pos_high)
+        return goal_position
 
 
 @configurable(pickleable=True)
