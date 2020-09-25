@@ -52,9 +52,9 @@ class ImpedanceControllerPolicy:
         self.x0_pos = self.x0[0,0:3]
         self.x0_quat = self.x0[0,3:]
         init_goal_dist = np.linalg.norm(goal_pose.position - initial_pose.position)
-        print(f'init position: {initial_pose.position}, goal position: {goal_pose.position}, '
-              f'dist: {init_goal_dist}')
-        print(f'init orientation: {initial_pose.orientation}, goal orientation: {goal_pose.orientation}')
+        #print(f'init position: {initial_pose.position}, goal position: {goal_pose.position}, '
+        #      f'dist: {init_goal_dist}')
+        #print(f'init orientation: {initial_pose.orientation}, goal orientation: {goal_pose.orientation}')
 
     def setup_logging(self):
         x_goal_str = "-".join(map(str, self.x_goal[0,:].tolist()))
@@ -100,8 +100,8 @@ class ImpedanceControllerPolicy:
                     obj_pose, current_position, self.custom_pinocchio_utils,
                     self.x0, self.x_goal, self.nGrid, self.dt, self.save_dir)
 
-        print(self.flipping)
-        print(self.cp_params)
+        #print(self.flipping)
+        #print(self.cp_params)
         self.goal_reached = False
 
         # Get object pose
@@ -278,7 +278,6 @@ class HierarchicalControllerPolicy:
         if self.mode == PolicyMode.TRAJ_OPT:
             init_pose = get_pose_from_observation(observation)
             goal_pose = get_pose_from_observation(observation, goal_pose=True)
-            print(init_pose)
             if self.difficulty == 4:
                 self.impedance_controller.set_init_goal(
                         init_pose, goal_pose, flip=flip_needed(init_pose, goal_pose))
