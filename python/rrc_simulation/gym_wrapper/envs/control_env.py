@@ -1,10 +1,13 @@
+import numpy as np
 from gym.spaces import Dict
 from gym import ObservationWrapper
+from rrc_simulation.tasks import move_cube
 from rrc_simulation.trifinger_platform import TriFingerPlatform
 from rrc_simulation.gym_wrapper.envs import cube_env, custom_env
 from rrc_simulation.gym_wrapper.envs.cube_env import ActionType
 from rrc_simulation.control.custom_pinocchio_utils import CustomPinocchioUtils
-from rrc_simulation.control.controller_utils import *
+from rrc_simulation.control.controller_utils import PolicyMode
+from rrc_simulation.control import controller_utils as c_utils
 from rrc_simulation.control.control_policy import HierarchicalControllerPolicy
 
 
@@ -20,15 +23,21 @@ class ResidualPolicyWrapper(ObservationWrapper):
         self.set_policy(policy)
 
     @property
+    def impedance_control_mode(self):
+        return (self.mode == PolicyMode.IMPEDANCE or
+                (self.mode == PolicyMode.RL_PUSH and
+                 self.rl_observation_space is None))
+
+    @property
     def action_space(self):
-        if self.mode == PolicyMode.IMPEDANCE:
+        if self.impedance_control_mode:
             return self._action_space['torque']
         else:
             return self._action_space['position']
 
     @property
     def action_type(self):
-        if self.mode == PolicyMode.IMPEDANCE:
+        if self.impedance_control_mode:
             return ActionType.TORQUE
         else:
             return ActionType.POSITION
@@ -49,14 +58,18 @@ class ResidualPolicyWrapper(ObservationWrapper):
         if policy:
             self.rl_observation_names = policy.observation_names
             self.rl_observation_space = policy.rl_observation_space
-            self.observation_space = Dict(
-                    {'impedance': self.env.observation_space,
-                     'rl': self.rl_observation_space})
+            obs_dict = {'impedance': self.env.observation_space}
+            if self.rl_observation_space:
+                obs_dict['rl'] = self.rl_observation_space
+            self.observation_space = Dict(obs_dict)
 
     def observation(self, observation):
-        observation_rl = self.process_observation_rl(observation)
         observation_imp = self.process_observation_impedance(observation)
-        return {'impedance': observation_imp, 'rl': observation_rl}
+        obs_dict = {'impedance': observation_imp}
+        if 'rl' in self.observation_space.spaces:
+            observation_rl = self.process_observation_rl(observation)
+            obs_dict['rl'] = observation_rl
+        return obs_dict
 
     def process_observation_residual(self, observation):
         return observation
@@ -89,13 +102,13 @@ class ResidualPolicyWrapper(ObservationWrapper):
         return observation
 
     def reset(self):
-        obs = self.env.reset()
+        obs = super(ResidualPolicyWrapper, self).reset()
         self.policy.platform = self.env.unwrapped.platform
         if isinstance(self.policy, HierarchicalControllerPolicy):
-            self.policy.mode = PolicyMode.RL_PUSH
+            self.policy.mode = self.policy.start_mode
             self.policy.traj_initialized = False
         self.step_count = 0
-        return self.observation(obs)
+        return obs
 
     def _step(self, action):
         if self.unwrapped.platform is None:
@@ -137,7 +150,7 @@ class ResidualPolicyWrapper(ObservationWrapper):
 
         is_done = self.step_count == move_cube.episode_length
 
-        return observation, reward, is_done, self.unwrapped.info
+        return observation, reward, is_done, self.env.info
 
     def _gym_action_to_robot_action(self, gym_action):
         if self.action_type == ActionType.TORQUE:
@@ -151,6 +164,7 @@ class ResidualPolicyWrapper(ObservationWrapper):
 
     def step(self, action):
         # CubeEnv handles gym_action_to_robot_action
+        #print(self.mode)
         if self.mode == PolicyMode.RL_PUSH:
             self.unwrapped.frameskip = self.policy.rl_frameskip
         else:

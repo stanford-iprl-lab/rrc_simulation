@@ -952,8 +952,8 @@ class LogInfoWrapper(gym.Wrapper):
                     initializer = self.unwrapped.initializer
                     sample_radius = np.linalg.norm(initializer.goal_pose.position[:2])
                     i[k] = sample_radius
-
-        return o, r, d, i
+        self.info = i
+        return o, r, d, self.info
 
 
 def compute_orientation_error(goal_pose, actual_pose, scale=False,

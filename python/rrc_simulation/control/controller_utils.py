@@ -28,9 +28,6 @@ class PolicyMode(enum.Enum):
     RL_PUSH = enum.auto()
     RESIDUAL = enum.auto()
 
-
-
-
 # Information about object faces given face_id
 OBJ_FACES_INFO = {
                   1: {"center_param": np.array([0.,-1.,0.]),
@@ -355,8 +352,12 @@ def get_initial_cp_params(obj_pose, fingertip_pos_list):
   cp_params = []
   for i in range(3):
     face = assigned_faces[i]
-    param = OBJ_FACES_INFO[face]["center_param"]
+    param = OBJ_FACES_INFO[face]["center_param"].copy()
+    print(i)
+    print(param)
     cp_params.append(param)
+  print("assigning cp params for lifting")
+  print(cp_params)
   return cp_params
 
 """
@@ -432,7 +433,11 @@ def get_waypoints_to_cp_param(obj_pose, fingertip_pos, cp_param, cube_half_size=
   waypoints_wf = []
   #waypoints_wf.append(fingertip_pos)
   for wp in waypoints:
-    waypoints_wf.append(np.squeeze(get_wf_from_of(wp, obj_pose)))
+    wp_wf = np.squeeze(get_wf_from_of(wp, obj_pose))
+    # If world frame z coord in less than 0, clip this to 0.01
+    if wp_wf[2] <= 0:
+        wp_wf[2] = 0.01
+    waypoints_wf.append(wp_wf)
 
   #return waypoints_wf
   # Add intermediate waypoints
@@ -457,7 +462,7 @@ def get_closest_ground_face(obj_pose):
   min_z = np.inf
   min_face = None
   for i in range(1,7):
-    c = OBJ_FACES_INFO[i]["center_param"]  
+    c = OBJ_FACES_INFO[i]["center_param"].copy()
     c_wf = get_wf_from_of(c, obj_pose)
     if c_wf[2] < min_z:
       min_z = c_wf[2]
@@ -504,14 +509,15 @@ def get_flipping_cp_params(
   
   if goal_face not in OBJ_FACES_INFO[init_face]["adjacent_faces"]:
     print("Goal face not adjacent to initial face")
+    goal_face = OBJ_FACES_INFO[init_face]["adjacent_faces"][0]
+    print(goal_face)
 
-  else:
-    # Common adjacent faces to init_face and goal_face
-    common_adjacent_faces = list(set(OBJ_FACES_INFO[init_face]["adjacent_faces"]). intersection(OBJ_FACES_INFO[goal_face]["adjacent_faces"]))
+  # Common adjacent faces to init_face and goal_face
+  common_adjacent_faces = list(set(OBJ_FACES_INFO[init_face]["adjacent_faces"]). intersection(OBJ_FACES_INFO[goal_face]["adjacent_faces"]))
 
-    opposite_goal_face = OBJ_FACES_INFO[goal_face]["opposite_face"]
+  opposite_goal_face = OBJ_FACES_INFO[goal_face]["opposite_face"]
   
-    #print("place fingers on faces {}, towards face {}".format(common_adjacent_faces, opposite_goal_face))
+  #print("place fingers on faces {}, towards face {}".format(common_adjacent_faces, opposite_goal_face))
 
   # Find closest fingers to each of the common_adjacent_faces
   # Transform finger tip positions to object frame
@@ -535,6 +541,7 @@ def get_flipping_cp_params(
     
     xy_distances[f_i, 0] = np.sign(f_of[0,y_ind]) * x_dist
     xy_distances[f_i, 1] = np.sign(f_of[0,x_ind]) * y_dist
+  print(xy_distances)
 
   finger_assignments = {}
   for face in common_adjacent_faces:
@@ -543,16 +550,16 @@ def get_flipping_cp_params(
       # Check y_ind column for finger that is furthest away
       if OBJ_FACES_INFO[face]["center_param"][x_ind] < 0: 
         # Want most negative value
-        f_i = np.nanargmin(xy_distances[:,y_ind])
+        f_i = np.nanargmin(xy_distances[:,1])
       else:
         # Want most positive value
-        f_i = np.nanargmax(xy_distances[:,y_ind])
+        f_i = np.nanargmax(xy_distances[:,1])
     else:
       # Check x_ind column for finger that is furthest away
       if OBJ_FACES_INFO[face]["center_param"][y_ind] < 0: 
-        f_i = np.nanargmin(xy_distances[:,x_ind])
+        f_i = np.nanargmin(xy_distances[:,0])
       else:
-        f_i = np.nanargmax(xy_distances[:,x_ind])
+        f_i = np.nanargmax(xy_distances[:,0])
     finger_assignments[face] = f_i
     xy_distances[f_i, :] = np.nan
 
@@ -560,21 +567,22 @@ def get_flipping_cp_params(
   height_param = -0.65 # Always want cps to be at this height
   width_param = 0.65 
   for face in common_adjacent_faces:
-    param = OBJ_FACES_INFO[face]["center_param"]
+    param = OBJ_FACES_INFO[face]["center_param"].copy()
     param += OBJ_FACES_INFO[OBJ_FACES_INFO[init_face]["opposite_face"]]["center_param"] * height_param
     param += OBJ_FACES_INFO[opposite_goal_face]["center_param"] * width_param
     cp_params[finger_assignments[face]] = param
     #cp_params.append(param)
   print("Assignments: {}".format(finger_assignments))
   print(cp_params)
-  return cp_params
+  return cp_params, init_face, goal_face
 
 """
 Get next waypoint for flipping
 """
 def get_flipping_waypoint(
                           obj_pose,
-                          goal_pose,
+                          init_face,
+                          goal_face,
                           fingertips_current_wf,
                           fingertips_init_wf,
                           cp_params,
@@ -583,9 +591,9 @@ def get_flipping_waypoint(
   # TODO: build in failure/timeout??
 
   # Get goal face
-  goal_face = get_closest_ground_face(goal_pose)
-  print("Goal face: {}".format(goal_face))
-  print("ground face: {}".format(get_closest_ground_face(obj_pose)))
+  #goal_face = get_closest_ground_face(goal_pose)
+  #print("Goal face: {}".format(goal_face))
+  #print("ground face: {}".format(get_closest_ground_face(obj_pose)))
 
   ground_face = get_closest_ground_face(obj_pose)
   #if (get_closest_ground_face(obj_pose) == goal_face):
@@ -595,8 +603,7 @@ def get_flipping_waypoint(
   # Transform current fingertip positions to of
   fingertips_new_wf = []
 
-  incr = 0.005
-  print(cp_params)
+  incr = 0.01
   for f_i in range(3):
     f_wf = fingertips_current_wf[f_i]
     if cp_params[f_i] is None:
@@ -606,10 +613,20 @@ def get_flipping_waypoint(
       face = get_face_from_cp_param(cp_params[f_i])
       f_of = get_of_from_wf(f_wf, obj_pose)
 
-      if (ground_face == goal_face):
-        # Increment up_axis of f_of
+      if ground_face == goal_face:
+        # Release object
         f_new_of = f_of - 0.01 * OBJ_FACES_INFO[face]["up_axis"]
-        flip_done = True
+        if obj_pose.position[2] <= 0.034: # TODO: HARDCODED
+          flip_done = True
+        else:
+          flip_done = False
+      elif ground_face != init_face:
+        # Ground face does not match goal force or init face, give up
+        f_new_of = f_of - 0.01 * OBJ_FACES_INFO[face]["up_axis"]
+        if obj_pose.position[2] <= 0.034: # TODO: HARDCODED
+          flip_done = True
+        else:
+          flip_done = False
       else:
         # Increment up_axis of f_of
         f_new_of = f_of + incr * OBJ_FACES_INFO[ground_face]["up_axis"]
@@ -620,8 +637,8 @@ def get_flipping_waypoint(
 
     fingertips_new_wf.append(f_new_wf)
 
-  print(fingertips_current_wf)
-  print(fingertips_new_wf)
+  #print(fingertips_current_wf)
+  #print(fingertips_new_wf)
   #fingertips_new_wf[2] = fingertips_init_wf[2]
    
   return fingertips_new_wf, flip_done
