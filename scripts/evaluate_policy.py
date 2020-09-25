@@ -32,7 +32,7 @@ import numpy as np
 
 from rrc_simulation.tasks import move_cube
 from rrc_simulation.gym_wrapper.envs import cube_env
-from rrc_simulation.gym_wrapper.envs import control_env
+from rrc_simulation.gym_wrapper.envs import control_env, custom_env
 from rrc_simulation.gym_wrapper.envs.control_env import ResidualPolicyWrapper
 from rrc_simulation.control.control_policy import ImpedanceControllerPolicy
 from rrc_simulation.control.control_policy import HierarchicalControllerPolicy
@@ -75,8 +75,8 @@ def main():
     )
 
     # TODO: Replace with your environment if you used a custom one.
-    if difficulty in [2, 3]:
-        action_type = cube_env.ActionType.TORQUE  # _AND_POSITION
+    if difficulty in [1,2,3,4]:
+        action_type = cube_env.ActionType.TORQUE_AND_POSITION
     else:
         action_type = cube_env.ActionType.POSITION
 
@@ -84,17 +84,17 @@ def main():
         "rrc_simulation.gym_wrapper:real_robot_challenge_phase_1-v1",
         initializer=initializer,
         action_type=action_type,
-        visualization=False,
+        visualization=True,
     )
 
     # TODO: Replace this with your model
     # Note: You may also use a different policy for each difficulty level (difficulty)
     if difficulty in [1,2,3,4]:
-        policy = ImpedenceControllerPolicy(action_space=env.action_space,
-                initial_pose=initial_pose, goal_pose=goal_pose)
-        # policy = HierarchicalControllerPolicy(action_space=env.action_space,
-        #            initial_pose=initial_pose, goal_pose=goal_pose,
-        #            load_dir='./push_reorient/push_reorient_s0')
+        #policy = ImpedanceControllerPolicy(action_space=env.action_space,
+        #        initial_pose=initial_pose, goal_pose=goal_pose)
+        policy = HierarchicalControllerPolicy(action_space=env.action_space,
+                   initial_pose=initial_pose, goal_pose=goal_pose,
+                   load_dir='', difficulty=difficulty)
     else:
         policy = RandomPolicy(env.action_space)
 
@@ -106,8 +106,12 @@ def main():
     is_done = False
     observation = env.reset()
 
-    if isinstance(policy, (HierarchicalControllerPolicy, ImpedanceControllerPolicy)):
-        policy.set_waypoints(env.platform, observation)
+    if isinstance(policy, (HierarchicalControllerPolicy)):
+        env = ResidualPolicyWrapper(env, policy)
+        obs, done = env.reset(), False
+        old_mode = policy.mode
+        custom_env.reset_camera()
+    #    policy.set_waypoints(env.platform, observation)
     accumulated_reward = 0
     while not is_done:
         action = policy.predict(observation)
