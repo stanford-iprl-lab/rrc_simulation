@@ -19,6 +19,10 @@ from rrc_simulation.gym_wrapper.envs.custom_env import reset_camera
 from rrc_simulation.control.controller_utils import PolicyMode
 from spinup.utils.test_policy import load_policy_and_env
 
+
+RESET_TIME_LIMIT = 150
+RL_RETRY_STEPS = 100
+
 class ImpedanceControllerPolicy:
     def __init__(self, action_space=None, initial_pose=None, goal_pose=None,
                  npz_file=None, debug_waypoints=False):
@@ -32,6 +36,7 @@ class ImpedanceControllerPolicy:
         self.debug_waypoints = debug_waypoints
         self.set_init_goal(initial_pose, goal_pose)
         self.setup_logging()
+        self.finger_waypoints = None
         self.done_with_primitive = True
         self.init_face = None
         self.goal_face = None
@@ -107,14 +112,14 @@ class ImpedanceControllerPolicy:
         # Get object pose
         obj_pose = get_pose_from_observation(observation)
 
-        if self.debug_waypoints:
+        if self.debug_waypoints and self.finger_waypoints is None:
             # Visual markers
             init_cps = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
             self.finger_waypoints = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
 
             # Draw target contact points
-            target_cps_wf = control_trifinger_platform.get_cp_wf_list_from_cp_params(self.cp_params, self.x0_pos, self.x0_quat)
-            init_cps.set_state(target_cps_wf)
+            # target_cps_wf = control_trifinger_platform.get_cp_wf_list_from_cp_params(self.cp_params, self.x0_pos, self.x0_quat)
+            # init_cps.set_state(target_cps_wf)
 
         # Get initial contact points and waypoints to them
         self.finger_waypoints_list = []
@@ -198,14 +203,17 @@ class HierarchicalControllerPolicy:
 
     def __init__(self, action_space=None, initial_pose=None, goal_pose=None,
                  npz_file=None, load_dir='', load_itr='last',
-                 start_mode=PolicyMode.RL_PUSH, difficulty=1, deterministic=False):
+                 start_mode=PolicyMode.RL_PUSH, difficulty=1, deterministic=False,
+                 debug_waypoints=False):
         self.full_action_space = action_space
         action_space = action_space['torque']
         self.impedance_controller = ImpedanceControllerPolicy(
-                action_space, initial_pose, goal_pose, npz_file)
+                action_space, initial_pose, goal_pose, npz_file,
+                debug_waypoints=debug_waypoints)
         self.load_policy(load_dir, load_itr, deterministic)
         self.mode = self.start_mode = start_mode
         self.steps_from_reset = 0
+        self.step_count = self.rl_start_step = 0
         self._platform = None
         self.traj_initialized = False
         self.difficulty = difficulty
@@ -262,12 +270,20 @@ class HierarchicalControllerPolicy:
 
         # TODO: check orientation error
         if np.linalg.norm(obj_pose.position - np.zeros(3)) > self.DIST_THRESH and self.start_mode == PolicyMode.RL_PUSH:
-            self.mode = PolicyMode.RL_PUSH
+            if self.mode != PolicyMode.RL_PUSH:
+                self.mode = PolicyMode.RL_PUSH
+                self.rl_start_step = self.step_count
+            elif self.step_count - self.rl_start_step == RL_RETRY_STEPS:
+                self.mode = PolicyMode.RESET
             return False
         elif self.mode == PolicyMode.RL_PUSH:
-            self.mode = PolicyMode.RESET
-            return False
-        elif self.mode == PolicyMode.RESET and self.steps_from_reset >= 100:
+            if self.step_count > 0:
+                self.mode = PolicyMode.RESET
+                return False
+            else:
+                self.mode = PolicyMode.TRAJ_OPT
+                return True
+        elif self.mode == PolicyMode.RESET and self.steps_from_reset >= RESET_TIME_LIMIT:
             self.mode = PolicyMode.TRAJ_OPT
             self.steps_from_reset = 0
             return True
@@ -292,23 +308,35 @@ class HierarchicalControllerPolicy:
             self.traj_initialized = True  # pre_traj_wp are initialized
             self.mode = PolicyMode.IMPEDANCE
 
+    def reset_action(self, observation):
+        robot_position = observation['observation']['position']
+        time_limit_step = RESET_TIME_LIMIT // 3
+        if self.steps_from_reset < time_limit_step:  # middle
+            robot_position[1::3] = self.default_robot_position[1::3]
+        elif time_limit_step <= self.steps_from_reset < 2*time_limit_step:  # tip
+            robot_position[2::3] = self.default_robot_position[2::3]
+        else:  # base
+            robot_position[::3] = self.default_robot_position[::3]
+        self.steps_from_reset += 1
+        return robot_position
+
     def predict(self, observation):
         if not self.traj_initialized and self.initialize_traj_opt(observation['impedance']):
             self.set_waypoints(observation['impedance'])
 
-        if self.mode == PolicyMode.RESET:
-            ac = self.default_robot_position
-            self.steps_from_reset += 1
+        if self.mode == PolicyMode.RL_PUSH and self.rl_observation_space is not None:
+            ac = self.rl_policy(observation['rl'])
+            ac = np.clip(ac, self.full_action_space['position'].low,
+                         self.full_action_space['position'].high)
+        elif self.mode == PolicyMode.RESET:
+            ac = self.reset_action(observation['impedance'])
         elif self.mode == PolicyMode.IMPEDANCE:
             ac = self.impedance_controller.predict(observation['impedance'])
             if self.impedance_controller.done_with_primitive:
                 self.traj_initialized = False
-        elif self.mode == PolicyMode.RL_PUSH and self.rl_observation_space is not None:
-            ac = self.rl_policy(observation['rl'])
-            ac = np.clip(ac, self.full_action_space['position'].low,
-                         self.full_action_space['position'].high)
         else:
             assert False, 'use a different start mode, started with: {}'.format(self.start_mode)
+        self.step_count += 1
         return ac
 
 
