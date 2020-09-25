@@ -574,7 +574,6 @@ def get_flipping_cp_params(
     #cp_params.append(param)
   print("Assignments: {}".format(finger_assignments))
   print(cp_params)
-  quit()
   return cp_params, init_face, goal_face
 
 """
