@@ -21,7 +21,7 @@ from spinup.utils.test_policy import load_policy_and_env
 
 
 RESET_TIME_LIMIT = 150
-RL_RETRY_STEPS = 30
+RL_RETRY_STEPS = 50
 
 
 class ImpedanceControllerPolicy:
@@ -278,6 +278,8 @@ class HierarchicalControllerPolicy:
         print('loaded policy from {}'.format(load_dir))
 
     def activate_rl(self, obj_pose):
+        if self.start_mode != PolicyMode.RL_PUSH:
+            return False
         return np.linalg.norm(obj_pose.position[:2] - np.zeros(2)) > self.DIST_THRESH
 
     def initialize_traj_opt(self, observation):
@@ -301,7 +303,9 @@ class HierarchicalControllerPolicy:
             else: # skips reset if starting at RL_PUSH
                 self.mode = PolicyMode.TRAJ_OPT
                 return True
-        elif self.mode == PolicyMode.RESET and self.steps_from_reset >= RESET_TIME_LIMIT:
+        elif (self.mode == PolicyMode.RESET and
+              (self.steps_from_reset >= RESET_TIME_LIMIT and
+               obj_pose.position[2] < 0.034)):
             self.steps_from_reset = 0
             if self.activate_rl(obj_pose):
                 self.mode = PolicyMode.RL_PUSH
