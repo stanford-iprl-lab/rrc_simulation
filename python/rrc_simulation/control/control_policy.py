@@ -21,7 +21,8 @@ from spinup.utils.test_policy import load_policy_and_env
 
 
 RESET_TIME_LIMIT = 150
-RL_RETRY_STEPS = 100
+RL_RETRY_STEPS = 30
+
 
 class ImpedanceControllerPolicy:
     def __init__(self, action_space=None, initial_pose=None, goal_pose=None,
@@ -43,6 +44,11 @@ class ImpedanceControllerPolicy:
         self.platform = None
         self.step_count = 0 # To keep track of time spent reaching 1 waypoint
         self.max_step_count = 200
+
+    def reset_policy(self, platform=None):
+        self.step_count = 0
+        if platform:
+            self.platform = platform
 
     def set_init_goal(self, initial_pose, goal_pose, flip=False):
         self.done_with_primitive = False
@@ -197,25 +203,33 @@ class ImpedanceControllerPolicy:
 
 
 class HierarchicalControllerPolicy:
-    DIST_THRESH = 0.09
+    DIST_THRESH = 0.1
     ORI_THRESH = np.pi / 6
     default_robot_position = trifinger_platform.TriFingerPlatform.spaces.robot_position.default
 
     def __init__(self, action_space=None, initial_pose=None, goal_pose=None,
                  npz_file=None, load_dir='', load_itr='last',
-                 start_mode=PolicyMode.RL_PUSH, difficulty=1, deterministic=False,
+                 start_mode=PolicyMode.RL_PUSH, difficulty=1, deterministic=True,
                  debug_waypoints=False):
         self.full_action_space = action_space
         action_space = action_space['torque']
         self.impedance_controller = ImpedanceControllerPolicy(
                 action_space, initial_pose, goal_pose, npz_file, debug_waypoints=True)
         self.load_policy(load_dir, load_itr, deterministic)
-        self.mode = self.start_mode = start_mode
+        self.start_mode = start_mode
+        self._platform = None
         self.steps_from_reset = 0
         self.step_count = self.rl_start_step = 0
-        self._platform = None
         self.traj_initialized = False
         self.difficulty = difficulty
+
+    def reset_policy(self, platform=None):
+        self.mode = self.start_mode
+        self.traj_initialized = False
+        self.steps_from_reset = self.step_count = self.rl_start_step = 0
+        if platform:
+            self._platform = platform
+        self.impedance_controller.reset_policy(platform)
 
     @property
     def platform(self):
@@ -263,12 +277,17 @@ class HierarchicalControllerPolicy:
         self.rl_observation_space = self.rl_env.observation_space
         print('loaded policy from {}'.format(load_dir))
 
+    def activate_rl(self, obj_pose):
+        return np.linalg.norm(obj_pose.position[:2] - np.zeros(2)) > self.DIST_THRESH
+
     def initialize_traj_opt(self, observation):
         obj_pose = get_pose_from_observation(observation)
         goal_pose = get_pose_from_observation(observation, goal_pose=True)
 
         # TODO: check orientation error
-        if np.linalg.norm(obj_pose.position - np.zeros(3)) > self.DIST_THRESH and self.start_mode == PolicyMode.RL_PUSH:
+        if (self.activate_rl(obj_pose) and
+            self.start_mode == PolicyMode.RL_PUSH and
+            self.mode != PolicyMode.RESET):
             if self.mode != PolicyMode.RL_PUSH:
                 self.mode = PolicyMode.RL_PUSH
                 self.rl_start_step = self.step_count
@@ -279,13 +298,18 @@ class HierarchicalControllerPolicy:
             if self.step_count > 0:
                 self.mode = PolicyMode.RESET
                 return False
-            else:
+            else: # skips reset if starting at RL_PUSH
                 self.mode = PolicyMode.TRAJ_OPT
                 return True
         elif self.mode == PolicyMode.RESET and self.steps_from_reset >= RESET_TIME_LIMIT:
-            self.mode = PolicyMode.TRAJ_OPT
             self.steps_from_reset = 0
-            return True
+            if self.activate_rl(obj_pose):
+                self.mode = PolicyMode.RL_PUSH
+                self.rl_start_step = self.step_count
+                return False
+            else:
+                self.mode = PolicyMode.TRAJ_OPT
+                return True
         elif self.mode == PolicyMode.TRAJ_OPT:
             return True
         else:
@@ -329,6 +353,8 @@ class HierarchicalControllerPolicy:
                          self.full_action_space['position'].high)
         elif self.mode == PolicyMode.RESET:
             ac = self.reset_action(observation['impedance'])
+            ac = np.clip(ac, self.full_action_space['position'].low,
+                         self.full_action_space['position'].high)
         elif self.mode == PolicyMode.IMPEDANCE:
             ac = self.impedance_controller.predict(observation['impedance'])
             if self.impedance_controller.done_with_primitive:

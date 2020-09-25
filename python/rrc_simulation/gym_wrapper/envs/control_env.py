@@ -104,9 +104,7 @@ class ResidualPolicyWrapper(ObservationWrapper):
     def reset(self):
         obs = super(ResidualPolicyWrapper, self).reset()
         self.policy.platform = self.env.unwrapped.platform
-        if isinstance(self.policy, HierarchicalControllerPolicy):
-            self.policy.mode = self.policy.start_mode
-            self.policy.traj_initialized = False
+        self.policy.reset_policy()
         self.step_count = 0
         return obs
 
