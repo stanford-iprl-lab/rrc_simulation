@@ -113,8 +113,8 @@ class ImpedanceControllerPolicy:
             self.finger_waypoints = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
 
             # Draw target contact points
-            target_cps_wf = control_trifinger_platform.get_cp_wf_list_from_cp_params(self.cp_params, self.x0_pos, self.x0_quat)
-            init_cps.set_state(target_cps_wf)
+            #target_cps_wf = control_trifinger_platform.get_cp_wf_list_from_cp_params(self.cp_params, self.x0_pos, self.x0_quat)
+            #init_cps.set_state(target_cps_wf)
 
         # Get initial contact points and waypoints to them
         self.finger_waypoints_list = []
@@ -202,7 +202,7 @@ class HierarchicalControllerPolicy:
         self.full_action_space = action_space
         action_space = action_space['torque']
         self.impedance_controller = ImpedanceControllerPolicy(
-                action_space, initial_pose, goal_pose, npz_file)
+                action_space, initial_pose, goal_pose, npz_file, debug_waypoints=True)
         self.load_policy(load_dir, load_itr, deterministic)
         self.mode = self.start_mode = start_mode
         self.steps_from_reset = 0
