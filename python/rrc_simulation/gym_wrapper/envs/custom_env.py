@@ -144,7 +144,7 @@ class ReorientInitializer:
     def __init__(self, difficulty=1, initial_dist=move_cube._CUBE_WIDTH):
         self.difficulty = difficulty
         self.initial_dist = initial_dist
-        random = np.random.RandomState()
+        self.random = np.random.RandomState()
 
     def get_initial_state(self):
         """Get a random initial object pose (always on the ground)."""
@@ -153,7 +153,7 @@ class ReorientInitializer:
         z = self.initial_pose.position[-1]
         self.initial_pose.position = np.array((x, y, z))
         if self.difficulty == 4:
-            orientation = Rotation.random(random_state=self.random).as_quat()
+            self.initial_pose.orientation = Rotation.random(random_state=self.random).as_quat()
         return self.initial_pose
 
     def get_goal(self):
@@ -536,7 +536,7 @@ class TaskSpaceWrapper(gym.ActionWrapper):
         if self.relative:
             r -= self.ac_pen * np.linalg.norm(action)
         else:
-            r -= self.ac_pen * np.linalg.norm(self._last_action - self._action)
+            r -= self.ac_pen * np.linalg.norm(self._last_action - action)
         self._last_action =  action
         return o, r, d, i
 
@@ -843,7 +843,8 @@ class CubeRewardWrapper(gym.Wrapper):
             info['step_rew'] = step_rew
         info['rew'] = rew
         info['pos_error'] = pos_error
-        info['ori_error'] = ori_error
+        if self.difficulty == 4 or self._ori_coef:
+            info['ori_error'] = ori_error
         total_rew = step_rew * 3 + rew + ac_penalty
         if pos_error < DIST_THRESH or ori_error < ORI_THRESH:
             return 2.5 * ((pos_error < DIST_THRESH) + (ori_error < ORI_THRESH))
