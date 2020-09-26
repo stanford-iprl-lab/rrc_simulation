@@ -6,6 +6,7 @@ with Gym environment
 import os
 import os.path as osp
 import numpy as np
+import joblib
 
 from datetime import date
 from rrc_simulation import trifinger_platform
@@ -17,11 +18,13 @@ from rrc_simulation.control import controller_utils as c_utils
 from rrc_simulation import visual_objects
 from rrc_simulation.gym_wrapper.envs.custom_env import reset_camera
 from rrc_simulation.control.controller_utils import PolicyMode
+from rrc_simulation.gym_wrapper.envs import rrc_utils
 import torch
 
 
 RESET_TIME_LIMIT = 150
 RL_RETRY_STEPS = 50
+MAX_RETRIES = 3
 
 
 class ImpedanceControllerPolicy:
@@ -222,6 +225,7 @@ class HierarchicalControllerPolicy:
         self.steps_from_reset = 0
         self.step_count = self.rl_start_step = 0
         self.traj_initialized = False
+        self.rl_retries = int(self.start_mode == PolicyMode.RL_PUSH)
         self.difficulty = difficulty
 
     def reset_policy(self, platform=None):
@@ -279,7 +283,7 @@ class HierarchicalControllerPolicy:
         print('loaded policy from {}'.format(load_dir))
 
     def activate_rl(self, obj_pose):
-        if self.start_mode != PolicyMode.RL_PUSH:
+        if self.start_mode != PolicyMode.RL_PUSH or self.rl_retries == MAX_RETRIES:
             return False
         return np.linalg.norm(obj_pose.position[:2] - np.zeros(2)) > self.DIST_THRESH
 
@@ -293,6 +297,7 @@ class HierarchicalControllerPolicy:
             self.mode != PolicyMode.RESET):
             if self.mode != PolicyMode.RL_PUSH:
                 self.mode = PolicyMode.RL_PUSH
+                self.rl_retries += 1
                 self.rl_start_step = self.step_count
             elif self.step_count - self.rl_start_step == RL_RETRY_STEPS:
                 self.mode = PolicyMode.RESET
@@ -384,7 +389,7 @@ def get_robot_position_velocity(observation):
     return observation['position'], observation['velocity']
 
 
-def load_policy_and_env(load_path, load_iter='last', deterministic=False):
+def load_policy_and_env(fpath, itr='last', deterministic=False):
     """
     Load a policy from save, whether it's TF or PyTorch, along with RL env.
 
@@ -420,11 +425,8 @@ def load_policy_and_env(load_path, load_iter='last', deterministic=False):
 
     # try to load environment from save
     # (sometimes this will fail because the environment could not be pickled)
-    try:
-        state = joblib.load(osp.join(fpath, 'vars'+itr+'.pkl'))
-        env = state['env']
-    except:
-        env = None
+    state = joblib.load(osp.join(fpath, 'vars'+itr+'.pkl'))
+    env = state['env']
 
     return env, get_action
 
