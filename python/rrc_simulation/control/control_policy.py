@@ -17,7 +17,7 @@ from rrc_simulation.control import controller_utils as c_utils
 from rrc_simulation import visual_objects
 from rrc_simulation.gym_wrapper.envs.custom_env import reset_camera
 from rrc_simulation.control.controller_utils import PolicyMode
-from spinup.utils.test_policy import load_policy_and_env
+import torch
 
 
 RESET_TIME_LIMIT = 150
@@ -382,4 +382,72 @@ def flip_needed(init_pose, goal_pose):
 def get_robot_position_velocity(observation):
     observation = observation['observation']
     return observation['position'], observation['velocity']
+
+
+def load_policy_and_env(load_path, load_iter='last', deterministic=False):
+    """
+    Load a policy from save, whether it's TF or PyTorch, along with RL env.
+
+    Not exceptionally future-proof, but it will suffice for basic uses of the
+    Spinning Up implementations.
+
+    Checks to see if there's a tf1_save folder. If yes, assumes the model
+    is tensorflow and loads it that way. Otherwise, loads as if there's a
+    PyTorch save.
+    """
+
+   backend = 'pytorch'
+
+    # handle which epoch to load from
+    if itr=='last':
+        # check filenames for epoch (AKA iteration) numbers, find maximum value
+
+        if backend == 'pytorch':
+            pytsave_path = osp.join(fpath, 'pyt_save')
+            # Each file in this folder has naming convention 'modelXX.pt', where
+            # 'XX' is either an integer or empty string. Empty string case
+            # corresponds to len(x)==8, hence that case is excluded.
+            saves = [int(x.split('.')[0][5:]) for x in os.listdir(pytsave_path) if len(x)>8 and 'model' in x]
+
+        itr = '%d'%max(saves) if len(saves) > 0 else ''
+    else:
+        assert isinstance(itr, int), \
+            "Bad value provided for itr (needs to be int or 'last')."
+        itr = '%d'%itr
+
+    # load the get_action function
+	get_action = load_pytorch_policy(fpath, itr, deterministic)
+
+    # try to load environment from save
+    # (sometimes this will fail because the environment could not be pickled)
+    try:
+        state = joblib.load(osp.join(fpath, 'vars'+itr+'.pkl'))
+        env = state['env']
+    except:
+        env = None
+
+    return env, get_action
+
+
+def load_pytorch_policy(fpath, itr, deterministic=False):
+    """ Load a pytorch policy saved with Spinning Up Logger."""
+
+    fname = osp.join(fpath, 'pyt_save', 'model'+itr+'.pt')
+    print('\n\nLoading from %s.\n\n'%fname)
+
+    model = torch.load(fname)
+
+    # make function for producing an action given a single state
+    def get_action(x):
+        with torch.no_grad():
+            x = torch.as_tensor(x, dtype=torch.float32)
+            if deterministic:
+                action = model.pi(x)[0].mean.numpy()
+            else:
+                action = model.act(x)
+        return action
+
+    return get_action
+
+
 
