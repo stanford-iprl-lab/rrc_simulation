@@ -406,7 +406,7 @@ def get_waypoints_to_cp_param(obj_pose, fingertip_pos, cp_param, cube_half_size=
 
     # Work with absolute values, and then correct sign at the end
     w = np.expand_dims(fingertip_pos_of,0)
-    w[0,:] = 0.08 * OBJ_FACES_INFO[ground_face]["up_axis"] # Bring fingers lower, to avoid links colliding with each other
+    w[0,:] = 0.07 * OBJ_FACES_INFO[ground_face]["up_axis"] # Bring fingers lower, to avoid links colliding with each other
     if abs(fingertip_pos_of[non_zero_dim]) < abs(cp_pos_of[non_zero_dim]) + tol:
       w[0,non_zero_dim] = cp_param[non_zero_dim] * (abs(cp_pos_of[non_zero_dim]) + tol) # fix sign
     if abs(fingertip_pos_of[zero_dim]) < abs(cp_pos_of[zero_dim]) + tol:
