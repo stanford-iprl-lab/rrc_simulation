@@ -501,15 +501,15 @@ def get_flipping_cp_params(
                           ):
   # Get goal face
   init_face = get_closest_ground_face(init_pose)
-  print("Init face: {}".format(init_face))
+  #print("Init face: {}".format(init_face))
   # Get goal face
   goal_face = get_closest_ground_face(goal_pose)
-  print("Goal face: {}".format(goal_face))
+  #print("Goal face: {}".format(goal_face))
   
   if goal_face not in OBJ_FACES_INFO[init_face]["adjacent_faces"]:
-    print("Goal face not adjacent to initial face")
+    #print("Goal face not adjacent to initial face")
     goal_face = OBJ_FACES_INFO[init_face]["adjacent_faces"][0]
-    print("Intermmediate goal face: {}".format(goal_face))
+    #print("Intermmediate goal face: {}".format(goal_face))
 
   # Common adjacent faces to init_face and goal_face
   common_adjacent_faces = list(set(OBJ_FACES_INFO[init_face]["adjacent_faces"]). intersection(OBJ_FACES_INFO[goal_face]["adjacent_faces"]))
@@ -615,7 +615,7 @@ def get_flipping_waypoint(
         f_new_of = f_of - 0.01 * OBJ_FACES_INFO[face]["up_axis"]
         if obj_pose.position[2] <= 0.034: # TODO: HARDCODED
           flip_done = True
-          print("FLIP SUCCESSFUL!")
+          #print("FLIP SUCCESSFUL!")
         else:
           flip_done = False
       elif ground_face != init_face:
