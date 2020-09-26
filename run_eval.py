@@ -48,7 +48,7 @@ with open(sample_file, "rb") as fh:
 for sample in test_data:
     if sample.iteration != args.i or sample.difficulty != args.l:
         continue
-         
+
     # Set init and goal poses
     init_pose_json = sample.init_pose_json
     goal_pose_json = sample.goal_pose_json

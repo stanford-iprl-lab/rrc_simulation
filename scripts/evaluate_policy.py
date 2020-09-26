@@ -37,7 +37,6 @@ from rrc_simulation.gym_wrapper.envs.control_env import ResidualPolicyWrapper
 from rrc_simulation.control.control_policy import ImpedanceControllerPolicy
 from rrc_simulation.control.control_policy import HierarchicalControllerPolicy
 from rrc_simulation.control.controller_utils import PolicyMode
-from spinup.utils import rrc_utils
 
 class RandomPolicy:
     """Dummy policy which uses random actions."""
@@ -112,6 +111,8 @@ def main():
     # sure to adjust this in case your custom environment behaves differently!
 
     is_done = False
+    eval_keys = ['is_success', 'is_success_ori', 'final_dist', 'final_score',
+                 'final_ori_dist', 'final_ori_scaled']
     env = custom_env.LogInfoWrapper(ResidualPolicyWrapper(env, policy),
                                     info_keys=eval_keys)
     obs = env.reset()
