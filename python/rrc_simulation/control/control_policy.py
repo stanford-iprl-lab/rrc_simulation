@@ -283,6 +283,8 @@ class HierarchicalControllerPolicy:
 
     def activate_rl(self, obj_pose):
         if self.start_mode != PolicyMode.RL_PUSH or self.rl_retries == MAX_RETRIES:
+            if self.rl_retries == MAX_RETRIES and self.difficulty == 4:
+                self.difficulty = 3
             return False
         return np.linalg.norm(obj_pose.position[:2] - np.zeros(2)) > self.DIST_THRESH
 
