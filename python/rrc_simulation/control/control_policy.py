@@ -396,7 +396,7 @@ def load_policy_and_env(load_path, load_iter='last', deterministic=False):
     PyTorch save.
     """
 
-   backend = 'pytorch'
+    backend = 'pytorch'
 
     # handle which epoch to load from
     if itr=='last':
@@ -416,7 +416,7 @@ def load_policy_and_env(load_path, load_iter='last', deterministic=False):
         itr = '%d'%itr
 
     # load the get_action function
-	get_action = load_pytorch_policy(fpath, itr, deterministic)
+    get_action = load_pytorch_policy(fpath, itr, deterministic)
 
     # try to load environment from save
     # (sometimes this will fail because the environment could not be pickled)
