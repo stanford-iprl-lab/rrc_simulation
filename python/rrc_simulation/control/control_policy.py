@@ -196,7 +196,7 @@ class ImpedanceControllerPolicy:
                 self.traj_waypoint_i += 1
                 self.goal_reached = False
         else:
-            if self.step_count > self.max_step_count:
+            if self.flipping and self.step_count > self.max_step_count:
                 self.done_with_primitive = True
 
         return torque
@@ -214,7 +214,7 @@ class HierarchicalControllerPolicy:
         self.full_action_space = action_space
         action_space = action_space['torque']
         self.impedance_controller = ImpedanceControllerPolicy(
-                action_space, initial_pose, goal_pose, npz_file, debug_waypoints=True)
+                action_space, initial_pose, goal_pose, npz_file, debug_waypoints=debug_waypoints)
         self.load_policy(load_dir, load_itr, deterministic)
         self.start_mode = start_mode
         self._platform = None
