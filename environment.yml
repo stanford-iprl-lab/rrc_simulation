@@ -1,4 +1,4 @@
-name: rrc_simulation
+name: rrc_new
 channels:
 - conda-forge
 dependencies:
@@ -18,5 +18,5 @@ dependencies:
   - pandas==0.24.2
   - joblib==0.16.0
   - stable-baselines==2.10.0
-  - casadi>=3.5.3
-  - tqdm>=4.48.2
+  - casadi==3.5.5
+  - -e git+git://github.com/krishpop/spinningup@rrc#egg=spinup
