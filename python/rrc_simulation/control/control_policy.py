@@ -23,7 +23,7 @@ import torch
 
 
 RESET_TIME_LIMIT = 150
-RL_RETRY_STEPS = 50
+RL_RETRY_STEPS = 70
 MAX_RETRIES = 3
 
 
@@ -297,7 +297,6 @@ class HierarchicalControllerPolicy:
             self.mode != PolicyMode.RESET):
             if self.mode != PolicyMode.RL_PUSH:
                 self.mode = PolicyMode.RL_PUSH
-                self.rl_retries += 1
                 self.rl_start_step = self.step_count
             elif self.step_count - self.rl_start_step == RL_RETRY_STEPS:
                 self.mode = PolicyMode.RESET
@@ -314,6 +313,7 @@ class HierarchicalControllerPolicy:
                obj_pose.position[2] < 0.034)):
             self.steps_from_reset = 0
             if self.activate_rl(obj_pose):
+                self.rl_retries += 1
                 self.mode = PolicyMode.RL_PUSH
                 self.rl_start_step = self.step_count
                 return False
