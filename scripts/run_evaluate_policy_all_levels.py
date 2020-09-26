@@ -105,7 +105,7 @@ def main():
         )
         sys.exit(1)
 
-    levels = (2,) # (1, 2, 3, 4)
+    levels = (1, 2, 3, 4)
     runs_per_level = 10
 
     logfile_tmpl = os.path.join(
@@ -119,10 +119,6 @@ def main():
     sample_file = os.path.join(args.output_directory, "test_data.p")
     with open(sample_file, "wb") as fh:
         pickle.dump(test_data, fh, pickle.HIGHEST_PROTOCOL)
-
-    # Read set of goals from sample_file
-    #with open(sample_file, "rb") as fh:
-    #    test_data = pickle.load(fh)
 
     # run "evaluate_policy.py" for each sample
     for sample in test_data:
