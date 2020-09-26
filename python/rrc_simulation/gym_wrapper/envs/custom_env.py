@@ -565,8 +565,9 @@ class TaskSpaceWrapper(gym.ActionWrapper):
 
 @configurable(pickleable=True)
 class ScaledActionWrapper(gym.ActionWrapper):
-    def __init__(self, env, goal_env=False, relative=True, scale=POS_SCALE):
-        super(TaskSpaceWrapper, self).__init__(env)
+    def __init__(self, env, goal_env=False, relative=True, scale=POS_SCALE,
+                 lim_penalty=-0.0):
+        super(ScaledActionWrapper, self).__init__(env)
         assert self.unwrapped.action_type == ActionType.POSITION, 'position control only'
         self.spaces = TriFingerPlatform.spaces
         self.goal_env = goal_env
@@ -578,6 +579,7 @@ class ScaledActionWrapper(gym.ActionWrapper):
             high = np.ones_like(high)
         self.action_space = gym.spaces.Box(low=low, high=high)
         self.scale = scale
+        self.lim_penalty = lim_penalty
 
     @property
     def pinocchio_utils(self):
@@ -585,20 +587,17 @@ class ScaledActionWrapper(gym.ActionWrapper):
         return self.platform.pinocchio_utils
 
     def reset(self):
-        obs = super(TaskSpaceWrapper, self).reset()
+        obs = super(ScaledActionWrapper, self).reset()
         platform = self.unwrapped.platform
         self._prev_obs = obs
         self._last_action = np.zeros_like(self.action_space.sample())
         return obs
 
     def step(self, action):
-        o, r, d, i = super(TaskSpaceWrapper, self).step(action)
+        o, r, d, i = super(ScaledActionWrapper, self).step(action)
         self._prev_obs = o
-        if self.relative:
-            r -= self.ac_pen * np.linalg.norm(action)
-        else:
-            r -= self.ac_pen * np.linalg.norm(self._last_action - action)
         self._last_action =  action
+        r += self._clipped_action * self.lim_penalty
         return o, r, d, i
 
     def action(self, action):
@@ -609,12 +608,15 @@ class ScaledActionWrapper(gym.ActionWrapper):
         current_position, current_velocity = obs[poskey], obs[velkey]
         if self.relative:
             goal_position = current_position + self.scale * action
+            pos_low, pos_high = self.env.action_space.low, self.env.action_space.high
         else:
             pos_low, pos_high = self.spaces.robot_position.low, self.spaces.robot_position.high
             pos_low = np.clip(current_position - self.scale, pos_low)
             pos_high = np.clip(current_position + self.scale, pos_high)
-            goal_position = np.clip(action, pos_low, pos_high)
-        return goal_position
+            goal_position = action
+        action = np.clip(goal_position, pos_low, pos_high)
+        self._clipped_action = not np.isclose(action, goal_position).all()
+        return action
 
 
 @configurable(pickleable=True)
