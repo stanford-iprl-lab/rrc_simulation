@@ -581,11 +581,6 @@ class ScaledActionWrapper(gym.ActionWrapper):
         self.scale = scale
         self.lim_penalty = lim_penalty
 
-    @property
-    def pinocchio_utils(self):
-        assert self.platform, 'platform must be reset to use pinocchio'
-        return self.platform.pinocchio_utils
-
     def reset(self):
         obs = super(ScaledActionWrapper, self).reset()
         platform = self.unwrapped.platform
@@ -597,7 +592,7 @@ class ScaledActionWrapper(gym.ActionWrapper):
         o, r, d, i = super(ScaledActionWrapper, self).step(action)
         self._prev_obs = o
         self._last_action =  action
-        r += self._clipped_action * self.lim_penalty
+        r += np.sum(self._clipped_action) * self.lim_penalty
         return o, r, d, i
 
     def action(self, action):
@@ -611,11 +606,11 @@ class ScaledActionWrapper(gym.ActionWrapper):
             pos_low, pos_high = self.env.action_space.low, self.env.action_space.high
         else:
             pos_low, pos_high = self.spaces.robot_position.low, self.spaces.robot_position.high
-            pos_low = np.clip(current_position - self.scale, pos_low)
-            pos_high = np.clip(current_position + self.scale, pos_high)
+            pos_low = np.max([current_position - self.scale, pos_low], axis=0)
+            pos_high = np.min([current_position + self.scale, pos_high], axis=0)
             goal_position = action
         action = np.clip(goal_position, pos_low, pos_high)
-        self._clipped_action = not np.isclose(action, goal_position).all()
+        self._clipped_action = np.abs(action - goal_position)
         return action
 
 
