@@ -179,6 +179,16 @@ def get_cp_wf_from_cp_param(cp_param, cube_pos_wf, cube_quat_wf, cube_half_size=
   return rotation.apply(cp.pos_of) + translation
 
 """
+Get contact point positions in world frame from cp_params
+"""
+def get_cp_wf_list_from_cp_params(cp_params, cube_pos, cube_quat, cube_half_size=CUBE_HALF_SIZE):
+  # Get contact points in wf
+  fingertip_goal_list = []
+  for i in range(cp_params.shape[0]):
+    fingertip_goal_list.append(get_cp_wf_from_cp_param(cp_params[i], cube_pos, cube_quat, cube_half_size))
+  return fingertip_goal_list
+
+"""
 Compute contact point position in object frame
 Inputs:
 cp_param: Contact point param [px, py, pz]

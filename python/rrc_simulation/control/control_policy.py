@@ -12,7 +12,6 @@ from datetime import date
 from rrc_simulation import trifinger_platform
 from rrc_simulation import run_rrc_sb as sb_utils
 from rrc_simulation.tasks import move_cube
-from rrc_simulation.control import control_trifinger_platform
 from rrc_simulation.control.custom_pinocchio_utils import CustomPinocchioUtils
 from rrc_simulation.control import controller_utils as c_utils
 from rrc_simulation import visual_objects
@@ -165,7 +164,7 @@ class ImpedanceControllerPolicy:
             next_cube_pos_wf = self.x_soln[self.traj_waypoint_i, 0:3]
             next_cube_quat_wf = self.x_soln[self.traj_waypoint_i, 3:]
 
-            self.fingertip_goal_list = control_trifinger_platform.get_cp_wf_list_from_cp_params(
+            self.fingertip_goal_list = c_utils.get_cp_wf_list_from_cp_params(
                     self.cp_params, next_cube_pos_wf, next_cube_quat_wf)
             # Get target contact forces in world frame 
             self.tip_forces_wf = self.l_wf_soln[self.traj_waypoint_i, :]
