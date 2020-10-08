@@ -151,8 +151,7 @@ def impedance_controller_single_finger(
     torque = np.squeeze(Ji.T @ (Kp @ delta_x - Kv @ dx_current) + Ji.T @ tip_force_wf)
   else:
     torque = np.squeeze(Ji.T @ (Kp @ delta_x - Kv @ dx_current))
-  
-  tol = tol
+
   goal_reached = (np.linalg.norm(delta_x) < tol)
   #print("Finger {} delta".format(finger_id))
   #print(np.linalg.norm(delta_x))
