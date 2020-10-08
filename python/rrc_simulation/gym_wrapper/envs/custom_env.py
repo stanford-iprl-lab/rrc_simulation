@@ -592,7 +592,7 @@ class ScaledActionWrapper(gym.ActionWrapper):
         o, r, d, i = super(ScaledActionWrapper, self).step(action)
         self._prev_obs = o
         self._last_action =  action
-        r = np.sum(self._clipped_action) * self.lim_penalty
+        r += np.sum(self._clipped_action) * self.lim_penalty
         return o, r, d, i
 
     def action(self, action):
