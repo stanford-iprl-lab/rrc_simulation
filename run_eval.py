@@ -1,3 +1,10 @@
+"""
+Script to run policy on one sample (from an output file)
+To run:
+python run_eval.py --dir </path/to/output/directory/> --l <difficulty level of sample> --i <sample number>
+flags:
+-v: visualize
+"""
 import os
 import os.path as osp
 import gym
@@ -15,9 +22,18 @@ from rrc_simulation.tasks import move_cube
 from rrc_simulation.control import control_policy
 from rrc_simulation.control.controller_utils import PolicyMode
 
-#from stable_baselines import HER, SAC
-#from spinup.utils.test_policy import load_policy_and_env
+# Choose with rl policy to load:
+#rl_load_dir = './scripts/models/push_reorient/push_reorient_s0/'
+#rl_load_dir = './scripts/models/scaled_actions/scaled_actions_s0'
+# Uncomment below if not using RL
+rl_load_dir = ''
 
+# Set start mode based on if there is a policy directory specified
+if not rl_load_dir:
+    start_mode = PolicyMode.TRAJ_OPT
+else:
+    start_mode = PolicyMode.RL_PUSH
+    
 parser = argparse.ArgumentParser()
 
 parser.add_argument(
@@ -36,6 +52,13 @@ parser.add_argument(
     "--l",
     type=int,
     help="Difficulty level",
+)
+
+parser.add_argument(
+    "--visualize",
+    "-v",
+    action="store_true",
+    help="Visualize with GUI.",
 )
 
 args = parser.parse_args()
@@ -77,7 +100,7 @@ def run_eval(initial_pose, goal_pose, difficulty=2, sample=None, rl_load_dir=Non
         "rrc_simulation.gym_wrapper:real_robot_challenge_phase_1-v1",
         initializer=initializer,
         action_type=action_type,
-        visualization=True,
+        visualization=args.visualize,
     )
     policy = control_policy.HierarchicalControllerPolicy(action_space=env.action_space,
                 initial_pose=initial_pose, goal_pose=goal_pose,
@@ -94,10 +117,6 @@ def run_eval(initial_pose, goal_pose, difficulty=2, sample=None, rl_load_dir=Non
                 print('Mode changed: {} to {}'.format(old_mode, policy.mode))
                 old_mode = policy.mode
         print('final_info:', i)
-
-#rl_load_dir = './scripts/models/push_reorient/push_reorient_s0/'
-rl_load_dir = ''
-start_mode = PolicyMode.TRAJ_OPT
 
 run_eval(initial_pose, goal_pose, rl_load_dir=rl_load_dir, difficulty=difficulty, start_mode=start_mode)
 
