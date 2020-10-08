@@ -38,6 +38,12 @@ parser.add_argument(
     help="Difficulty level",
 )
 
+parser.add_argument(
+    '--no-rl',
+    action='store_true',
+    help='run evaluate_policy without rl'
+)
+
 args = parser.parse_args()
 
 # load samples
@@ -79,10 +85,14 @@ def run_eval(initial_pose, goal_pose, difficulty=2, sample=None, rl_load_dir=Non
         action_type=action_type,
         visualization=False,
     )
+    eval_keys = ['is_success', 'is_success_ori', 'final_dist', 'final_score',
+                 'final_ori_dist', 'final_ori_scaled']
+
     policy = control_policy.HierarchicalControllerPolicy(action_space=env.action_space,
                 initial_pose=initial_pose, goal_pose=goal_pose,
-                load_dir=rl_load_dir, difficulty=difficulty, start_mode=start_mode, debug_waypoints=True)
-    env = ResidualPolicyWrapper(env, policy)
+                load_dir=rl_load_dir, difficulty=difficulty, start_mode=start_mode, debug_waypoints=False)
+    env = custom_env.LogInfoWrapper(ResidualPolicyWrapper(env, policy),
+                                    info_keys=eval_keys)
     rews, infos = [], []
     for _ in range(n_eps):
         obs, done = env.reset(), False
@@ -95,9 +105,11 @@ def run_eval(initial_pose, goal_pose, difficulty=2, sample=None, rl_load_dir=Non
                 old_mode = policy.mode
         print('final_info:', i)
 
-#rl_load_dir = './scripts/models/push_reorient/push_reorient_s0/'
-rl_load_dir = ''
-start_mode = PolicyMode.TRAJ_OPT
+rl_load_dir = './scripts/models/push_reorient/push_reorient_s0/'
+start_mode = PolicyMode.RL_PUSH
+if args.no_rl:
+    rl_load_dir = ''
+    start_mode = PolicyMode.TRAJ_OPT
 
 run_eval(initial_pose, goal_pose, rl_load_dir=rl_load_dir, difficulty=difficulty, start_mode=start_mode)
 

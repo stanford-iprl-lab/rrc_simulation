@@ -22,11 +22,6 @@ from rrc_simulation.gym_wrapper.envs import rrc_utils
 import torch
 
 
-RESET_TIME_LIMIT = 150
-RL_RETRY_STEPS = 70
-MAX_RETRIES = 3
-
-
 class ImpedanceControllerPolicy:
     def __init__(self, action_space=None, initial_pose=None, goal_pose=None,
                  npz_file=None, debug_waypoints=False):
@@ -206,8 +201,13 @@ class ImpedanceControllerPolicy:
 
 
 class HierarchicalControllerPolicy:
-    DIST_THRESH = 0.1
+    DIST_THRESH = 0.09
     ORI_THRESH = np.pi / 6
+
+    RESET_TIME_LIMIT = 50
+    RL_RETRY_STEPS = 70
+    MAX_RETRIES = 3
+
     default_robot_position = trifinger_platform.TriFingerPlatform.spaces.robot_position.default
 
     def __init__(self, action_space=None, initial_pose=None, goal_pose=None,
@@ -283,7 +283,7 @@ class HierarchicalControllerPolicy:
         print('loaded policy from {}'.format(load_dir))
 
     def activate_rl(self, obj_pose):
-        if self.start_mode != PolicyMode.RL_PUSH or self.rl_retries == MAX_RETRIES:
+        if self.start_mode != PolicyMode.RL_PUSH or self.rl_retries == self.MAX_RETRIES:
             return False
         return np.linalg.norm(obj_pose.position[:2] - np.zeros(2)) > self.DIST_THRESH
 
@@ -298,7 +298,7 @@ class HierarchicalControllerPolicy:
             if self.mode != PolicyMode.RL_PUSH:
                 self.mode = PolicyMode.RL_PUSH
                 self.rl_start_step = self.step_count
-            elif self.step_count - self.rl_start_step == RL_RETRY_STEPS:
+            elif self.step_count - self.rl_start_step == self.RL_RETRY_STEPS:
                 self.mode = PolicyMode.RESET
             return False
         elif self.mode == PolicyMode.RL_PUSH:
@@ -309,7 +309,7 @@ class HierarchicalControllerPolicy:
                 self.mode = PolicyMode.TRAJ_OPT
                 return True
         elif (self.mode == PolicyMode.RESET and
-              (self.steps_from_reset >= RESET_TIME_LIMIT and
+              (self.steps_from_reset >= self.RESET_TIME_LIMIT and
                obj_pose.position[2] < 0.034)):
             self.steps_from_reset = 0
             if self.activate_rl(obj_pose):
@@ -343,7 +343,7 @@ class HierarchicalControllerPolicy:
 
     def reset_action(self, observation):
         robot_position = observation['observation']['position']
-        time_limit_step = RESET_TIME_LIMIT // 3
+        time_limit_step = self.RESET_TIME_LIMIT // 3
         if self.steps_from_reset < time_limit_step:  # middle
             robot_position[1::3] = self.default_robot_position[1::3]
         elif time_limit_step <= self.steps_from_reset < 2*time_limit_step:  # tip

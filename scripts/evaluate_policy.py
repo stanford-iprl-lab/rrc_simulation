@@ -94,7 +94,8 @@ def main():
         #policy = ImpedanceControllerPolicy(action_space=env.action_space,
         #        initial_pose=initial_pose, goal_pose=goal_pose)
         # rl_load_dir, start_mode = './models/push_reorient/push_reorient_s0', PolicyMode.RL_PUSH
-        rl_load_dir, start_mode = '', PolicyMode.TRAJ_OPT
+        rl_load_dir, start_mode = './models/scaled_actions/scaled_actions_s0', PolicyMode.RL_PUSH
+        # rl_load_dir, start_mode = '', PolicyMode.TRAJ_OPT
         print(env.action_space)
         policy = HierarchicalControllerPolicy(action_space=env.action_space,
                    initial_pose=initial_pose, goal_pose=goal_pose,

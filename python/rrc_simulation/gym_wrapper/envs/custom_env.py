@@ -566,7 +566,7 @@ class TaskSpaceWrapper(gym.ActionWrapper):
 @configurable(pickleable=True)
 class ScaledActionWrapper(gym.ActionWrapper):
     def __init__(self, env, goal_env=False, relative=True, scale=POS_SCALE,
-                 lim_penalty=-0.0):
+                 lim_penalty=0.0):
         super(ScaledActionWrapper, self).__init__(env)
         assert self.unwrapped.action_type == ActionType.POSITION, 'position control only'
         self.spaces = TriFingerPlatform.spaces
@@ -585,14 +585,14 @@ class ScaledActionWrapper(gym.ActionWrapper):
         obs = super(ScaledActionWrapper, self).reset()
         platform = self.unwrapped.platform
         self._prev_obs = obs
-        self._last_action = np.zeros_like(self.action_space.sample())
+        self._clipped_action = self._last_action = np.zeros_like(self.action_space.sample())
         return obs
 
     def step(self, action):
         o, r, d, i = super(ScaledActionWrapper, self).step(action)
         self._prev_obs = o
         self._last_action =  action
-        r += np.sum(self._clipped_action) * self.lim_penalty
+        r = np.sum(self._clipped_action) * self.lim_penalty
         return o, r, d, i
 
     def action(self, action):
@@ -612,6 +612,44 @@ class ScaledActionWrapper(gym.ActionWrapper):
         action = np.clip(goal_position, pos_low, pos_high)
         self._clipped_action = np.abs(action - goal_position)
         return action
+
+
+class RelativeGoalWrapper(gym.ObservationWrapper):
+    def __init__(self, env, keep_goal=False):
+        super(RelativeGoalWrapper, self).__init__(env)
+        self._observation_keys = list(env.observation_space.spaces.keys())
+        assert 'goal_object_position' in self._observation_keys, 'goal_object_position missing in observation'
+        self.position_only = 'goal_object_orientation' not in self._observation_keys
+        self.observation_names =  [k for k in self._observation_keys if 'goal_object' not in k]
+        self.observation_names.append('relative_goal_object_position')
+        if keep_goal:
+            self.observation_names.append('goal_object_position')
+        if not self.position_only:
+            self.observation_names.append('relative_goal_object_orientation')
+            if keep_goal:
+                self.observation_names.append('goal_object_orientation')
+        obs_dict = {}
+        for k in self.observation_names:
+            if 'relative_goal_object' not in k:
+                obs_dict[k] = env.observation_space.spaces[k]
+            elif k == 'relative_goal_object_position':
+                high = env.observation_space['goal_object_position'].high - env.observation_space['goal_object_position'].low
+                low = -high
+                obs_dict[k] = gym.spaces.Box(low=low, high=high)
+            elif k == 'relative_goal_object_orientation':
+                high = env.observation_space['goal_object_orientation'].high - env.observation_space['goal_object_orientation'].low
+                low = -high
+                obs_dict[k] = gym.spaces.Box(low=low, high=high)
+        self.observation_space = gym.spaces.Dict(obs_dict)
+
+    def observation(self, obs):
+        obs_dict = {k: obs[k] for k in self.observation_names if k in self._observation_keys}
+        obs_dict['relative_goal_object_position'] = obs['goal_object_position'] - obs['object_position']
+        if not self.position_only:
+            offset = (Rotation.from_quat(obs['goal_object_orientation'])
+                      * Rotation.from_quat(obs['object_orientation']).inv()).as_quat()
+            obs_dict['relative_goal_object_orientation'] = offset
+        return obs_dict
 
 
 @configurable(pickleable=True)
@@ -703,12 +741,13 @@ class FlattenGoalWrapper(gym.ObservationWrapper):
         if reset_goal and self._sample_goal_fun is not None:
             self.goal = self.sample_goal_fun(obs_dict=obs)
         goal_object_pose = move_cube.Pose.from_dict(self.unwrapped.goal)
-        self.unwrapped.goal_marker = visual_objects.CubeMarker(
-            width=0.065,
-            position=goal_object_pose.position,
-            orientation=goal_object_pose.orientation,
-            physicsClientId=self.platform.simfinger._pybullet_client_id,
-        )
+        if self.unwrapped.visualization:
+            self.unwrapped.goal_marker = visual_objects.CubeMarker(
+                width=0.065,
+                position=goal_object_pose.position,
+                orientation=goal_object_pose.orientation,
+                physicsClientId=self.platform.simfinger._pybullet_client_id,
+            )
         obs = self.unwrapped._create_observation(0)
         return self.observation(obs)
 
@@ -816,6 +855,7 @@ class CubeRewardWrapper(gym.Wrapper):
         self._prev_obs = None
         self._augment_reward = augment_reward
         self.rew_fn = rew_fn
+
 
     @property
     def target_dist(self):
