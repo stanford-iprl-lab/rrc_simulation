@@ -39,8 +39,6 @@ def run_replay(sample: TestSample) -> float:
     Returns:
         The accumulated reward of the replay.
     """
-    print('init_pose:', sample.init_pose_json)
-    print('goal_pose:', sample.goal_pose_json)
     thisdir = os.path.dirname(__file__)
     replay_exe = os.path.join(thisdir, "replay_action_log.py")
     cmd = [
@@ -98,8 +96,7 @@ def main():
             )
             sys.exit(1)
 
-        #levels = (1, 2, 3, 4)
-        levels = (2,)
+        levels = (1, 2, 3, 4)
 
         # load samples
         sample_file = os.path.join(args.input_directory, "test_data.p")

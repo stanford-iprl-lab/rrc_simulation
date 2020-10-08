@@ -5,6 +5,7 @@ from scipy.spatial.distance import pdist, squareform
 
 from .contact_point import ContactPoint
 from rrc_simulation.tasks import move_cube
+from rrc_simulation.traj_opt.fixed_contact_point_opt import FixedContactPointOpt
 
 # Here, hard code the base position of the fingers (as angle on the arena)
 r = 0.15
@@ -73,6 +74,8 @@ Inputs:
 tip_pos_desired_list: List of desired fingertip positions for each finger
 q_current: Current joint angles
 dq_current: Current joint velocities
+tip_forces_wf: fingertip forces in world frame
+tol: tolerance for determining when fingers have reached goal
 """
 def impedance_controller(
                         tip_pos_desired_list,
@@ -112,6 +115,8 @@ tip_desired: Desired fingertip pose **ORIENTATION??**
   for now, just track position
 q_current: Current joint angles
 dq_current: Current joint velocities
+tip_forces_wf: fingertip forces in world frame
+tol: tolerance for determining when fingers have reached goal
 """
 def impedance_controller_single_finger(
                                       finger_id,
@@ -173,10 +178,19 @@ def get_cp_wf_from_cp_param(cp_param, cube_pos_wf, cube_quat_wf, cube_half_size=
   return rotation.apply(cp.pos_of) + translation
 
 """
+Get contact point positions in world frame from cp_params
+"""
+def get_cp_wf_list_from_cp_params(cp_params, cube_pos, cube_quat, cube_half_size=CUBE_HALF_SIZE):
+  # Get contact points in wf
+  fingertip_goal_list = []
+  for i in range(cp_params.shape[0]):
+    fingertip_goal_list.append(get_cp_wf_from_cp_param(cp_params[i], cube_pos, cube_quat, cube_half_size))
+  return fingertip_goal_list
+
+"""
 Compute contact point position in object frame
 Inputs:
 cp_param: Contact point param [px, py, pz]
-cube: Block object, which contains object shape info
 """
 def get_cp_of_from_cp_param(cp_param, cube_half_size=CUBE_HALF_SIZE):
   obj_shape = (cube_half_size, cube_half_size, cube_half_size)
@@ -207,6 +221,10 @@ def get_cp_of_from_cp_param(cp_param, cube_half_size=CUBE_HALF_SIZE):
   cp = ContactPoint(cp_of, quat)
   return cp
 
+"""
+Get face id on cube, given cp_param
+cp_param: [x,y,z]
+"""
 def get_face_from_cp_param(cp_param):
   x_param = cp_param[0]
   y_param = cp_param[1]
@@ -227,6 +245,9 @@ def get_face_from_cp_param(cp_param):
 
   return face
 
+"""
+Trasform point p from world frame to object frame, given object pose
+"""
 def get_wf_from_of(p, obj_pose):
   cube_pos_wf = obj_pose.position
   cube_quat_wf = obj_pose.orientation
@@ -236,7 +257,9 @@ def get_wf_from_of(p, obj_pose):
   
   return rotation.apply(p) + translation
 
-
+"""
+Trasform point p from object frame to world frame, given object pose
+"""
 def get_of_from_wf(p, obj_pose):
   cube_pos_wf = obj_pose.position
   cube_quat_wf = obj_pose.orientation
@@ -249,24 +272,73 @@ def get_of_from_wf(p, obj_pose):
 
   return rotation_inv.apply(p) + translation_inv
 
-def get_parallel_ground_plane_xy(ground_face):
-  if ground_face in [1,2]:
-    x_ind = 0
-    y_ind = 2
-  if ground_face in [3,5]:
-    x_ind = 2
-    y_ind = 1
-  if ground_face in [4,6]:
-    x_ind = 0
-    y_ind = 1
-  return x_ind, y_ind
+##############################################################################
+# Lift mode functions
+##############################################################################
+"""
+Run trajectory optimization
+obj_pose: current object pose (for getting contact points)
+current_position: current joint positions of robot
+x0: object initial position for traj opt
+x_goal: object goal position for traj opt
+nGrid: number of grid points
+dt: delta t
+"""
+def run_traj_opt(obj_pose, current_position, custom_pinocchio_utils, x0, x_goal, nGrid, dt, save_dir=None):
+  init_fingertip_pos_list = [[],[],[]] # Containts 3 lists, one for each finger
+  for finger_id in range(3):
+    tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[finger_id]
+    init_fingertip_pos_list[finger_id].append(tip_current)
+
+  # Get initial contact points and waypoints to them
+  cp_params = get_lifting_cp_params(obj_pose, init_fingertip_pos_list)
+
+  cube_shape = (move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH)
+  cube_mass = 0.02 # TODO Hardcoded
+
+  # Formulate and solve optimization problem
+  opt_problem = FixedContactPointOpt(
+                                    nGrid     = nGrid, # Number of timesteps
+                                    dt        = dt,   # Length of each timestep (seconds)
+                                    cp_params = cp_params,
+                                    x0        = x0,
+                                    x_goal    = x_goal,
+                                    obj_shape = cube_shape,
+                                    obj_mass  = cube_mass,
+                                    )
+  x_soln     = np.array(opt_problem.x_soln)
+  l_wf_soln  = np.array(opt_problem.l_wf_soln)
+  cp_params  = np.array(cp_params)
+
+  # Save solution in npz file
+  if save_dir is not None:
+    save_string = "{}/trajectory".format(save_dir)
+    np.savez(save_string,
+             dt         = opt_problem.dt,
+             x0         = x0,
+             x_goal     = x_goal,
+             t          = opt_problem.t_soln,
+             x          = opt_problem.x_soln,
+             dx         = opt_problem.dx_soln,
+             l          = opt_problem.l_soln,
+             l_wf       = opt_problem.l_wf_soln,
+             cp_params  = np.array(cp_params),
+             obj_shape  = cube_shape,
+             obj_mass   = cube_mass,
+             fnum       = opt_problem.system.fnum, 
+             qnum       = opt_problem.system.qnum, 
+             x_dim      = opt_problem.system.x_dim, 
+             dx_dim     = opt_problem.system.dx_dim, 
+            )
+  return x_soln, l_wf_soln, cp_params
+  
 
 """
 Get initial contact points on cube
 Assign closest cube face to each finger
 Since we are lifting object, don't worry about wf z-axis, just care about wf xy-plane
 """
-def get_initial_cp_params(obj_pose, fingertip_pos_list):
+def get_lifting_cp_params(obj_pose, fingertip_pos_list):
   # face that is touching the ground
   ground_face = get_closest_ground_face(obj_pose)
 
@@ -282,13 +354,13 @@ def get_initial_cp_params(obj_pose, fingertip_pos_list):
   y_axis = np.array([0,1])
   
   # Object frame axis corresponding to plane parallel to ground plane
-  x_ind, y_ind = get_parallel_ground_plane_xy(ground_face)
+  x_ind, y_ind = __get_parallel_ground_plane_xy(ground_face)
     
   xy_distances = np.zeros((3, 2)) # Row corresponds to a finger, columns are x and y axis distances
   for f_i, f_of in enumerate(fingertip_pos_list_of):
     point_in_plane = np.array([f_of[0,x_ind], f_of[0,y_ind]]) # Ignore dimension of point that's not in the plane
-    x_dist = get_distance_from_pt_2_line(x_axis, np.array([0,0]), point_in_plane)
-    y_dist = get_distance_from_pt_2_line(y_axis, np.array([0,0]), point_in_plane)
+    x_dist = __get_distance_from_pt_2_line(x_axis, np.array([0,0]), point_in_plane)
+    y_dist = __get_distance_from_pt_2_line(y_axis, np.array([0,0]), point_in_plane)
     
     xy_distances[f_i, 0] = x_dist
     xy_distances[f_i, 1] = y_dist
@@ -351,30 +423,12 @@ def get_initial_cp_params(obj_pose, fingertip_pos_list):
   for i in range(3):
     face = assigned_faces[i]
     param = OBJ_FACES_INFO[face]["center_param"].copy()
-    print(i)
-    print(param)
+    #print(i)
+    #print(param)
     cp_params.append(param)
-  print("assigning cp params for lifting")
-  print(cp_params)
+  #print("assigning cp params for lifting")
+  #print(cp_params)
   return cp_params
-
-"""
-Get distance from point to line (in 2D)
-Inputs:
-a, b: points on line
-p: standalone point, for which we want to compute its distance to line
-"""
-def get_distance_from_pt_2_line(a, b, p):
-  a = np.squeeze(a)
-  b = np.squeeze(b)
-  p = np.squeeze(p)
-
-  ba = b - a
-  ap = a - p
-  c = ba * (np.dot(ap,ba) / np.dot(ba,ba))
-  d = ap - c
-  
-  return np.sqrt(np.dot(d,d))
 
 """
 Get waypoints to initial contact point on object
@@ -405,7 +459,7 @@ def get_waypoints_to_cp_param(obj_pose, fingertip_pos, cp_param, cube_half_size=
 
     # Work with absolute values, and then correct sign at the end
     w = np.expand_dims(fingertip_pos_of,0)
-    w[0,:] = 0.08 * OBJ_FACES_INFO[ground_face]["up_axis"] # Bring fingers lower, to avoid links colliding with each other
+    w[0,:] = 0.07 * OBJ_FACES_INFO[ground_face]["up_axis"] # Bring fingers lower, to avoid links colliding with each other
     if abs(fingertip_pos_of[non_zero_dim]) < abs(cp_pos_of[non_zero_dim]) + tol:
       w[0,non_zero_dim] = cp_param[non_zero_dim] * (abs(cp_pos_of[non_zero_dim]) + tol) # fix sign
     if abs(fingertip_pos_of[zero_dim]) < abs(cp_pos_of[zero_dim]) + tol:
@@ -453,6 +507,10 @@ def get_waypoints_to_cp_param(obj_pose, fingertip_pos, cp_param, cube_half_size=
 
   return waypoints_final
 
+##############################################################################
+# Lift mode functions
+##############################################################################
+
 """
 Determine face that is closest to ground
 """
@@ -468,28 +526,6 @@ def get_closest_ground_face(obj_pose):
 
   return min_face
 
-#def get_flips(init_pose, goal_pose):
-#  x = np.array([[1,0,0]])
-#  y = np.array([[0,1,0]])
-#  z = np.array([[0,0,1]])
-#
-#  obj_axes = [x,y,z]
-#
-#  init_axes_wf = []
-#  goal_axes_wf = []
-#  for ax in obj_axes:
-#    init_ax = get_wf_from_of(ax, init_pose)
-#    goal_ax = get_wf_from_of(ax, goal_pose)
-#    init_axes_wf.append(init_ax / np.linalg.norm(init_ax))
-#    goal_axes_wf.append(goal_ax / np.linalg.norm(goal_ax))
-#
-#  # Take dot products between init_ax and goal_ax
-#  dims_dp = np.zeros(3)
-#  for i in range(3): 
-#    dp = init_axes_wf[i] @ goal_axes_wf[i].T
-#    dims_dp[i] = dp 
-#  print(dims_dp)
-
 """
 Get flipping contact points
 """
@@ -500,15 +536,15 @@ def get_flipping_cp_params(
                           ):
   # Get goal face
   init_face = get_closest_ground_face(init_pose)
-  print("Init face: {}".format(init_face))
+  #print("Init face: {}".format(init_face))
   # Get goal face
   goal_face = get_closest_ground_face(goal_pose)
-  print("Goal face: {}".format(goal_face))
+  #print("Goal face: {}".format(goal_face))
   
   if goal_face not in OBJ_FACES_INFO[init_face]["adjacent_faces"]:
-    print("Goal face not adjacent to initial face")
+    #print("Goal face not adjacent to initial face")
     goal_face = OBJ_FACES_INFO[init_face]["adjacent_faces"][0]
-    print(goal_face)
+    #print("Intermmediate goal face: {}".format(goal_face))
 
   # Common adjacent faces to init_face and goal_face
   common_adjacent_faces = list(set(OBJ_FACES_INFO[init_face]["adjacent_faces"]). intersection(OBJ_FACES_INFO[goal_face]["adjacent_faces"]))
@@ -526,7 +562,7 @@ def get_flipping_cp_params(
     finger_base_of.append(f_of)
 
   # Object frame axis corresponding to plane parallel to ground plane
-  x_ind, y_ind = get_parallel_ground_plane_xy(init_face)
+  x_ind, y_ind = __get_parallel_ground_plane_xy(init_face)
   # Find distance from x axis and y axis, and store in xy_distances
   x_axis = np.array([1,0])
   y_axis = np.array([0,1])
@@ -534,12 +570,11 @@ def get_flipping_cp_params(
   xy_distances = np.zeros((3, 2)) # Row corresponds to a finger, columns are x and y axis distances
   for f_i, f_of in enumerate(finger_base_of):
     point_in_plane = np.array([f_of[0,x_ind], f_of[0,y_ind]]) # Ignore dimension of point that's not in the plane
-    x_dist = get_distance_from_pt_2_line(x_axis, np.array([0,0]), point_in_plane)
-    y_dist = get_distance_from_pt_2_line(y_axis, np.array([0,0]), point_in_plane)
+    x_dist = __get_distance_from_pt_2_line(x_axis, np.array([0,0]), point_in_plane)
+    y_dist = __get_distance_from_pt_2_line(y_axis, np.array([0,0]), point_in_plane)
     
     xy_distances[f_i, 0] = np.sign(f_of[0,y_ind]) * x_dist
     xy_distances[f_i, 1] = np.sign(f_of[0,x_ind]) * y_dist
-  print(xy_distances)
 
   finger_assignments = {}
   for face in common_adjacent_faces:
@@ -570,8 +605,7 @@ def get_flipping_cp_params(
     param += OBJ_FACES_INFO[opposite_goal_face]["center_param"] * width_param
     cp_params[finger_assignments[face]] = param
     #cp_params.append(param)
-  print("Assignments: {}".format(finger_assignments))
-  print(cp_params)
+  #print("Assignments: {}".format(finger_assignments))
   return cp_params, init_face, goal_face
 
 """
@@ -585,9 +619,6 @@ def get_flipping_waypoint(
                           fingertips_init_wf,
                           cp_params,
                          ):
-
-  # TODO: build in failure/timeout??
-
   # Get goal face
   #goal_face = get_closest_ground_face(goal_pose)
   #print("Goal face: {}".format(goal_face))
@@ -616,6 +647,7 @@ def get_flipping_waypoint(
         f_new_of = f_of - 0.01 * OBJ_FACES_INFO[face]["up_axis"]
         if obj_pose.position[2] <= 0.034: # TODO: HARDCODED
           flip_done = True
+          #print("FLIP SUCCESSFUL!")
         else:
           flip_done = False
       elif ground_face != init_face:
@@ -640,4 +672,41 @@ def get_flipping_waypoint(
   #fingertips_new_wf[2] = fingertips_init_wf[2]
    
   return fingertips_new_wf, flip_done
+
+##############################################################################
+# Private functions
+##############################################################################
+
+"""
+Given a ground face id, get the axes that are parallel to the floor
+"""
+def __get_parallel_ground_plane_xy(ground_face):
+  if ground_face in [1,2]:
+    x_ind = 0
+    y_ind = 2
+  if ground_face in [3,5]:
+    x_ind = 2
+    y_ind = 1
+  if ground_face in [4,6]:
+    x_ind = 0
+    y_ind = 1
+  return x_ind, y_ind
+
+"""
+Get distance from point to line (in 2D)
+Inputs:
+a, b: points on line
+p: standalone point, for which we want to compute its distance to line
+"""
+def __get_distance_from_pt_2_line(a, b, p):
+  a = np.squeeze(a)
+  b = np.squeeze(b)
+  p = np.squeeze(p)
+
+  ba = b - a
+  ap = a - p
+  c = ba * (np.dot(ap,ba) / np.dot(ba,ba))
+  d = ap - c
+  
+  return np.sqrt(np.dot(d,d))
 

@@ -155,56 +155,6 @@ def main(args):
   plot_state(save_dir, fingertip_pos_list, x_pos_list, x_quat_list, x_goal,fingertip_goal_list)
 
 """
-Given intial state, run trajectory optimization
-"""
-def run_traj_opt(obj_pose, current_position, custom_pinocchio_utils, x0, x_goal, nGrid, dt, save_dir):
-  init_fingertip_pos_list = [[],[],[]] # Containts 3 lists, one for each finger
-  for finger_id in range(3):
-    tip_current = custom_pinocchio_utils.forward_kinematics(current_position)[finger_id]
-    init_fingertip_pos_list[finger_id].append(tip_current)
-
-  # Get initial contact points and waypoints to them
-  cp_params = get_initial_cp_params(obj_pose, init_fingertip_pos_list)
-
-  cube_shape = (move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH)
-  cube_mass = 0.02 # TODO Hardcoded
-
-  # Formulate and solve optimization problem
-  opt_problem = FixedContactPointOpt(
-                                    nGrid     = nGrid, # Number of timesteps
-                                    dt        = dt,   # Length of each timestep (seconds)
-                                    cp_params = cp_params,
-                                    x0        = x0,
-                                    x_goal    = x_goal,
-                                    obj_shape = cube_shape,
-                                    obj_mass  = cube_mass,
-                                    )
-  x_soln     = np.array(opt_problem.x_soln)
-  l_wf_soln  = np.array(opt_problem.l_wf_soln)
-  cp_params  = np.array(cp_params)
-
-  # Save solution in npz file
-  save_string = "{}/trajectory".format(save_dir)
-  np.savez(save_string,
-           dt         = opt_problem.dt,
-           x0         = x0,
-           x_goal     = x_goal,
-           t          = opt_problem.t_soln,
-           x          = opt_problem.x_soln,
-           dx         = opt_problem.dx_soln,
-           l          = opt_problem.l_soln,
-           l_wf       = opt_problem.l_wf_soln,
-           cp_params  = np.array(cp_params),
-           obj_shape  = cube_shape,
-           obj_mass   = cube_mass,
-           fnum       = opt_problem.system.fnum, 
-           qnum       = opt_problem.system.qnum, 
-           x_dim      = opt_problem.system.x_dim, 
-           dx_dim     = opt_problem.system.dx_dim, 
-          )
-  return x_soln, l_wf_soln, cp_params
-  
-"""
 Run episode
 Inputs:
 nGrid

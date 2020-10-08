@@ -12,7 +12,6 @@ from datetime import date
 from rrc_simulation import trifinger_platform
 from rrc_simulation import run_rrc_sb as sb_utils
 from rrc_simulation.tasks import move_cube
-from rrc_simulation.control import control_trifinger_platform
 from rrc_simulation.control.custom_pinocchio_utils import CustomPinocchioUtils
 from rrc_simulation.control import controller_utils as c_utils
 from rrc_simulation import visual_objects
@@ -105,7 +104,7 @@ class ImpedanceControllerPolicy:
                 obj_pose, self.goal_pose)
             self.flipping_wp = None
         else:
-            self.x_soln, self.l_wf_soln, self.cp_params = control_trifinger_platform.run_traj_opt(
+            self.x_soln, self.l_wf_soln, self.cp_params = c_utils.run_traj_opt(
                     obj_pose, current_position, self.custom_pinocchio_utils,
                     self.x0, self.x_goal, self.nGrid, self.dt, self.save_dir)
 
@@ -160,7 +159,7 @@ class ImpedanceControllerPolicy:
             next_cube_pos_wf = self.x_soln[self.traj_waypoint_i, 0:3]
             next_cube_quat_wf = self.x_soln[self.traj_waypoint_i, 3:]
 
-            self.fingertip_goal_list = control_trifinger_platform.get_cp_wf_list_from_cp_params(
+            self.fingertip_goal_list = c_utils.get_cp_wf_list_from_cp_params(
                     self.cp_params, next_cube_pos_wf, next_cube_quat_wf)
             # Get target contact forces in world frame 
             self.tip_forces_wf = self.l_wf_soln[self.traj_waypoint_i, :]
@@ -194,7 +193,7 @@ class ImpedanceControllerPolicy:
                 self.traj_waypoint_i += 1
                 self.goal_reached = False
         else:
-            if self.step_count > self.max_step_count:
+            if self.flipping and self.step_count > self.max_step_count:
                 self.done_with_primitive = True
 
         return torque
@@ -217,8 +216,7 @@ class HierarchicalControllerPolicy:
         self.full_action_space = action_space
         action_space = action_space['torque']
         self.impedance_controller = ImpedanceControllerPolicy(
-                action_space, initial_pose, goal_pose, npz_file,
-                debug_waypoints=debug_waypoints)
+                action_space, initial_pose, goal_pose, npz_file, debug_waypoints=debug_waypoints)
         self.load_policy(load_dir, load_itr, deterministic)
         self.start_mode = start_mode
         self._platform = None
@@ -284,6 +282,8 @@ class HierarchicalControllerPolicy:
 
     def activate_rl(self, obj_pose):
         if self.start_mode != PolicyMode.RL_PUSH or self.rl_retries == self.MAX_RETRIES:
+            if self.rl_retries == self.MAX_RETRIES and self.difficulty == 4:
+                self.difficulty = 3
             return False
         return np.linalg.norm(obj_pose.position[:2] - np.zeros(2)) > self.DIST_THRESH
 
