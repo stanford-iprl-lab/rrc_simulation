@@ -17,7 +17,9 @@ To run their full evaluation procedure on this policy, run the `rrc_evaluate` sc
 ### Test with a single sample (best way to visualize a single run)
 Use the script `run_eval.py` in the root directory to run the policy on one sample (from an output file)
 To run:
-python run_eval.py --dir </path/to/output/directory/> --l <difficulty level of sample> --i <sample number>
+
+python run_eval.py --dir /path/to/output/directory/ --l difficulty_level --i sample_number
+    
 flags:
 -v: visualize
 
