@@ -110,7 +110,7 @@ class ImpedanceControllerPolicy:
                 obj_pose, self.goal_pose)
             self.flipping_wp = None
         else:
-            self.x_soln, self.l_wf_soln, self.cp_params = control_trifinger_platform.run_traj_opt(
+            self.x_soln, self.l_wf_soln, self.cp_params = c_utils.run_traj_opt(
                     obj_pose, current_position, self.custom_pinocchio_utils,
                     self.x0, self.x_goal, self.nGrid, self.dt, self.save_dir)
 
