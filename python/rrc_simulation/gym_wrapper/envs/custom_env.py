@@ -163,6 +163,23 @@ class ReorientInitializer:
         return self.goal_pose
 
 
+class RandomGoalOrientationInitializer:
+    init_pose = move_cube.Pose(np.array([0,0,move_cube._CUBE_WIDTH/2]), np.array([0,0,0,1]))
+
+    def __init__(self, difficulty=1, max_dist=np.pi):
+        self.difficulty = difficulty
+        self.max_dist = max_dist
+        self.random = np.random.RandomState()
+
+    def get_initial_state(self):
+        return self.init_pose
+
+    def get_goal(self):
+        goal =  move_cube.sample_goal(-1)
+        goal.position = np.zero(3)
+        return goal
+
+
 class RandomOrientationInitializer:
     goal = move_cube.Pose(np.array([0,0,move_cube._CUBE_WIDTH/2]), np.array([0,0,0,1]))
 
@@ -614,6 +631,7 @@ class ScaledActionWrapper(gym.ActionWrapper):
         return action
 
 
+@configurable(pickleable=True)
 class RelativeGoalWrapper(gym.ObservationWrapper):
     def __init__(self, env, keep_goal=False):
         super(RelativeGoalWrapper, self).__init__(env)
@@ -855,7 +873,6 @@ class CubeRewardWrapper(gym.Wrapper):
         self._prev_obs = None
         self._augment_reward = augment_reward
         self.rew_fn = rew_fn
-
 
     @property
     def target_dist(self):
