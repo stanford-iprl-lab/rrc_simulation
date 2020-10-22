@@ -130,12 +130,16 @@ class ImpedanceControllerPolicy:
             # init_cps.set_state(target_cps_wf)
 
         # Get initial contact points and waypoints to them
-        self.finger_waypoints_list = []
-        self.fingertips_init = self.custom_pinocchio_utils.forward_kinematics(current_position)
-        for f_i in range(3):
-            tip_current = self.fingertips_init[f_i]
-            waypoints = c_utils.get_waypoints_to_cp_param(obj_pose, tip_current, self.cp_params[f_i])
-            self.finger_waypoints_list.append(waypoints)
+        #self.finger_waypoints_list = []
+        #self.fingertips_init = self.custom_pinocchio_utils.forward_kinematics(current_position)
+        #for f_i in range(3):
+        #    tip_current = self.fingertips_init[f_i]
+        #    waypoints = c_utils.get_waypoints_to_cp_param(obj_pose, tip_current, self.cp_params[f_i])
+        #    self.finger_waypoints_list.append(waypoints)
+
+        # Use traj opt to get initial contact points and waypoints to them
+        self.ft_waypoints = c_utils.get_waypoints(current_position)
+      
         self.pre_traj_waypoint_i = 0
         self.traj_waypoint_i = 0
         self.goal_reached = False
@@ -148,11 +152,14 @@ class ImpedanceControllerPolicy:
             object_pose = self.platform.get_object_pose(self.platform._action_log['actions'][-1]['t'])
         else:
             object_pose = self.platform.get_object_pose(0)
-        if self.pre_traj_waypoint_i < len(self.finger_waypoints_list[0]):
+        if self.pre_traj_waypoint_i < self.ft_waypoints.shape[0]:
+            print(self.pre_traj_waypoint_i)
+        #if self.pre_traj_waypoint_i < len(self.finger_waypoints_list[0]):
             # Get fingertip goals from finger_waypoints_list
             self.fingertip_goal_list = []
             for f_i in range(3):
-                self.fingertip_goal_list.append(self.finger_waypoints_list[f_i][self.pre_traj_waypoint_i])
+                #self.fingertip_goal_list.append(self.finger_waypoints_list[f_i][self.pre_traj_waypoint_i])
+                self.fingertip_goal_list.append(self.ft_waypoints[self.pre_traj_waypoint_i, 3*f_i:3*f_i+3])
             self.tol = 0.009
             self.tip_forces_wf = None
         elif self.flipping:
@@ -183,7 +190,8 @@ class ImpedanceControllerPolicy:
 
         if self.goal_reached:
             self.step_count = 0 # Reset step count
-            if self.pre_traj_waypoint_i < len(self.finger_waypoints_list[0]):
+            #if self.pre_traj_waypoint_i < len(self.finger_waypoints_list[0]):
+            if self.pre_traj_waypoint_i < self.ft_waypoints.shape[0]:
                 self.pre_traj_waypoint_i += 1
                 self.goal_reached = False
             if self.flipping:

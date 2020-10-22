@@ -6,6 +6,7 @@ from scipy.spatial.distance import pdist, squareform
 from .contact_point import ContactPoint
 from rrc_simulation.tasks import move_cube
 from rrc_simulation.traj_opt.fixed_contact_point_opt import FixedContactPointOpt
+from rrc_simulation.traj_opt.static_object_opt import StaticObjectOpt
 
 # Here, hard code the base position of the fingers (as angle on the arena)
 r = 0.15
@@ -430,6 +431,30 @@ def get_lifting_cp_params(obj_pose, fingertip_pos_list):
   #print("assigning cp params for lifting")
   #print(cp_params)
   return cp_params
+
+"""
+Solve traj opt to get finger waypoints
+"""
+def get_waypoints(q_cur):
+  # Get list of desired fingertip positions
+  ft_goal_list = [
+    np.expand_dims(np.array([0.08457, 0.016751647828266603, 0.1977209510032231]),1),
+    np.expand_dims(np.array([-0.02777764742520991, -0.08161559231227206, 0.1977209510032231]),1),
+    np.expand_dims(np.array([-0.0567923525742952, 0.06486394448412161, 0.1977209510032231]),1)
+    ]
+
+  problem = StaticObjectOpt(
+               ft_goal_list,
+               q0        = q_cur,
+               nGrid     = 20,
+               dt        = 0.1,
+               cp_params = None,
+               obj_shape = None,
+               obj_mass  = None,
+               )
+
+  ft_pos = problem.ft_pos_soln
+  return ft_pos
 
 """
 Get waypoints to initial contact point on object
