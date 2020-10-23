@@ -433,27 +433,27 @@ def get_lifting_cp_params(obj_pose, fingertip_pos_list):
   return cp_params
 
 """
-Solve traj opt to get finger waypoints
+Set up traj opt for fingers and static object
 """
-def get_waypoints(q_cur):
-  # Get list of desired fingertip positions
-  ft_goal_list = [
-    np.expand_dims(np.array([0.08457, 0.016751647828266603, 0.1977209510032231]),1),
-    np.expand_dims(np.array([-0.02777764742520991, -0.08161559231227206, 0.1977209510032231]),1),
-    np.expand_dims(np.array([-0.0567923525742952, 0.06486394448412161, 0.1977209510032231]),1)
-    ]
-
+def define_static_object_opt():
+  cube_shape = (move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH)
   problem = StaticObjectOpt(
-               ft_goal_list,
-               q0        = q_cur,
                nGrid     = 20,
                dt        = 0.1,
-               cp_params = None,
-               obj_shape = None,
-               obj_mass  = None,
+               obj_shape = cube_shape,
                )
+  return problem
 
-  ft_pos = problem.ft_pos_soln
+"""
+Solve traj opt to get finger waypoints
+"""
+def get_waypoints(nlp, q_cur):
+  # Get list of desired fingertip positions
+  ft_goal = np.array([0.08457, 0.016751647828266603, 0.1977209510032231,-0.02777764742520991, -0.08161559231227206, 0.1977209510032231,-0.0567923525742952, 0.06486394448412161, 0.1977209510032231])
+
+  nlp.solve_nlp(ft_goal, q_cur)
+
+  ft_pos = nlp.ft_pos_soln
   return ft_pos
 
 """

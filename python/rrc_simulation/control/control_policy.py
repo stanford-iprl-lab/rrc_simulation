@@ -37,6 +37,7 @@ class ImpedanceControllerPolicy:
             self.dt = 0.01
         self.flipping = False
         self.debug_waypoints = debug_waypoints
+        self.draw_bounding_spheres = True
         self.set_init_goal(initial_pose, goal_pose)
         self.setup_logging()
         self.finger_waypoints = None
@@ -125,6 +126,7 @@ class ImpedanceControllerPolicy:
             init_cps = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
             self.finger_waypoints = visual_objects.Marker(number_of_goals=3, goal_size=0.008)
 
+
             # Draw target contact points
             # target_cps_wf = control_trifinger_platform.get_cp_wf_list_from_cp_params(self.cp_params, self.x0_pos, self.x0_quat)
             # init_cps.set_state(target_cps_wf)
@@ -138,8 +140,16 @@ class ImpedanceControllerPolicy:
         #    self.finger_waypoints_list.append(waypoints)
 
         # Use traj opt to get initial contact points and waypoints to them
-        self.ft_waypoints = c_utils.get_waypoints(current_position)
+        self.nlp = c_utils.define_static_object_opt()
+        self.ft_waypoints = c_utils.get_waypoints(self.nlp, current_position)
       
+        # Draw bounding spheres
+        if self.draw_bounding_spheres:
+            self.sphere_vis_list = []
+            self.finger_id_to_viz = 2
+            for i in range(4):
+              self.sphere_vis_list.append(visual_objects.Marker(number_of_goals=self.nlp.system.fingers[0].snum_list[i], goal_size=self.nlp.system.fingers[0].r_list[i]))
+
         self.pre_traj_waypoint_i = 0
         self.traj_waypoint_i = 0
         self.goal_reached = False
@@ -178,6 +188,14 @@ class ImpedanceControllerPolicy:
             self.tol = 0.007
         if self.debug_waypoints:
             self.finger_waypoints.set_state(self.fingertip_goal_list)
+
+        if self.draw_bounding_spheres:
+            # plot bounding spheres
+            centers_wf = self.nlp.system.fingers[self.finger_id_to_viz].get_sphere_centers_wf(current_position[3*self.finger_id_to_viz : 3*self.finger_id_to_viz+3])
+
+            for i in range(4):
+              self.sphere_vis_list[i].set_state(centers_wf[i].tolist())
+
         # currently, torques are not limited to same range as what is used by simulator
         # torque commands are breaking limits for initial and final goal poses that require 
         # huge distances are covered in a few waypoints? Assign # waypoints wrt distance between
