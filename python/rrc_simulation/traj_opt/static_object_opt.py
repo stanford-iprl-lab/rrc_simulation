@@ -24,7 +24,9 @@ class StaticObjectOpt:
     self.system = StaticObjectSystem(
                                      nGrid     = nGrid,
                                      dt        = dt,
+                                     q0        = q0,
                                      obj_shape = obj_shape,
+                                     obj_pose  = obj_pose,
                                     )
     
     # Test various functions
@@ -73,9 +75,8 @@ class StaticObjectOpt:
 
     # Get initial guess
     self.z0 = self.system.get_initial_guess(self.z, q0)
-    #t0, s0, a0 = self.system.decvar_unpack(self.z0)
-    #q0, dq0 = self.system.s_unpack(s0)
-    ##self.get_constraints(self.system,t0,s0,l0)
+    t0, s0, a0 = self.system.decvar_unpack(self.z0)
+    self.system.collision_constraint(s0)
 
     #print("\nINITIAL TRAJECTORY")
     #print("time: {}".format(t0))
@@ -176,18 +177,22 @@ def main():
     np.expand_dims(np.array([-0.0567923525742952, 0.06486394448412161, 0.07977209510032231]),1)
     ]
 
-  #q0        = np.array([[0.2,0.9,-1.7,0.6,0.9,-1.7,0.5,0.9,-1.7]])
+  q0        = np.array([[0,0.9,-1,0,0.9,-1.7,0,0.9,-1.7]])
+  #q0 = np.zeros((1,9))
+  #q0[0,1] = 0.7
   
   nGrid = 20
   dt = 0.1
 
   cube_shape = (move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH)
+
   opt_problem = StaticObjectOpt(
                ft_goal_list,
                nGrid     = nGrid,
                dt        = dt,
+               q0        = q0,
                obj_shape = cube_shape,
-               obj_pose  = move_cube.Pose(),
+               obj_pose  = move_cube.Pose(position=np.array([0, 0, 0])),
                )
 
   # Files to save solutions

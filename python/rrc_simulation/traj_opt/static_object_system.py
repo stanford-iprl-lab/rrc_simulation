@@ -4,6 +4,7 @@ import pybullet
 
 from rrc_simulation.tasks import move_cube
 from rrc_simulation.traj_opt import utils
+from rrc_simulation.traj_opt.finger_model import FingerModel
 
 """
 Fingers and static object
@@ -14,6 +15,7 @@ class StaticObjectSystem:
   def __init__(self,
                nGrid     = 100,
                dt        = 0.1,
+               q0        = np.array([[0,0.9,-1.7,0,0.9,-1.7,0,0.9,-1.7]]),
                obj_shape = None,
                obj_pose  = move_cube.Pose(),
                log_file  = None,
@@ -44,6 +46,15 @@ class StaticObjectSystem:
     # Object pose and shape
     self.obj_shape = obj_shape
     self.obj_pose  = obj_pose
+
+
+    print(self.FK(q0))
+    # Define fingers
+    self.fingers = []
+    for i in range(self.fnum):
+      theta_base = self.theta_base_deg_list[i] * (np.pi/180)
+      self.fingers.append(FingerModel(theta_base, q0[0, i*self.qnum:i*self.qnum+self.qnum]))
+    quit()
 
 ################################################################################
 # Decision variable management helper functions
