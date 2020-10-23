@@ -15,7 +15,6 @@ class StaticObjectSystem:
   def __init__(self,
                nGrid     = 100,
                dt        = 0.1,
-               q0        = np.array([[0,0.9,-1.7,0,0.9,-1.7,0,0.9,-1.7]]),
                obj_shape = None,
                obj_pose  = move_cube.Pose(),
                log_file  = None,
@@ -48,13 +47,14 @@ class StaticObjectSystem:
     self.obj_pose  = obj_pose
 
 
-    print(self.FK(q0))
     # Define fingers
     self.fingers = []
     for i in range(self.fnum):
       theta_base = self.theta_base_deg_list[i] * (np.pi/180)
-      self.fingers.append(FingerModel(theta_base, q0[0, i*self.qnum:i*self.qnum+self.qnum]))
-    quit()
+      self.fingers.append(FingerModel(theta_base))
+
+    # fingertip goal parameters
+    self.ft_goal_param = SX.sym("ft", 3*self.fnum)
 
 ################################################################################
 # Decision variable management helper functions
@@ -84,7 +84,7 @@ class StaticObjectSystem:
     s_flat = self.s_pack(q,dq)
 
     # Slack variables for ft_goal
-    a  = SX.sym("a", qnum * fnum)
+    a  = SX.sym("a", 3 * fnum)
 
     return t,s_flat,a
 
@@ -164,9 +164,8 @@ class StaticObjectSystem:
   """
   Constrain fingertip positions at end of trajectory to be at ft_goal
   With a slack variable
-  ft_goal_list: list of finger tip goal positions
   """
-  def ft_goal_constraint(self, s_flat,a, ft_goal_list):
+  def ft_goal_constraint(self, s_flat,a):
     q, dq  = self.s_unpack(s_flat)
     q_end = q[-1, :]
 
@@ -174,8 +173,8 @@ class StaticObjectSystem:
     ft_end = self.FK(q_end)
     con_list = []
     for f_i in range(self.fnum):
-      for q_i in range(self.qnum):
-        f = a[f_i*self.qnum + q_i] - (ft_goal_list[f_i][q_i,0] - ft_end[f_i][q_i,0]) ** 2
+      for d_i in range(3): # x y z dimensions
+        f = a[f_i*3 + d_i] - (self.ft_goal_param[f_i*3 + d_i] - ft_end[f_i][d_i,0]) ** 2
         con_list.append(f)
     return horzcat(*con_list)
 

@@ -9,33 +9,22 @@ from rrc_simulation.traj_opt.static_object_system import StaticObjectSystem
 
 class StaticObjectOpt:
   def __init__(self,
-               ft_goal_list, 
                nGrid     = 100,
                dt        = 0.1,
-               q0        = np.array([[0,0.9,-1.7,0,0.9,-1.7,0,0.9,-1.7]]),
                obj_shape = None,
                obj_pose  = move_cube.Pose(),
                ):
 
     self.nGrid = nGrid
     self.dt = dt
-    self.q0 = q0    
     # Define system
     self.system = StaticObjectSystem(
                                      nGrid     = nGrid,
                                      dt        = dt,
-                                     q0        = q0,
                                      obj_shape = obj_shape,
                                      obj_pose  = obj_pose,
                                     )
     
-    # Test various functions
-    #x = np.zeros((1,7))
-    #x[0,0:3] = obj_pose.position
-    #x[0,3] = obj_pose.orientation[3]
-    #x[0,4:7] = obj_pose.orientation[0:3]
-    ##print("x: {}".format(x))
-    #self.system.get_grasp_matrix(x)
     qnum = self.system.qnum
 
     # Get decision variables
@@ -43,18 +32,12 @@ class StaticObjectOpt:
     # Pack t,x,u,l into a vector of decision variables
     self.z = self.system.decvar_pack(self.t,self.s_flat, self.a)
 
-    #print(self.z)
     q, dq = self.system.s_unpack(self.s_flat)
-    #print(self.system.s_unpack(self.s_flat))
 
     test_q = np.array([[0.5, 0.9, -1.7,0.5, 0.9, -1.7,0.5, 0.9, -1.7,]])
     # Test pinocchio functions with casadi variables
     #print(self.system.get_jacobian(test_q))
     #print(self.system.FK(q[0,:]))
-
-    self.ft_goal_list = ft_goal_list
-
-    self.system.ft_goal_constraint(self.s_flat, self.a, self.ft_goal_list)
 
     # Formulate constraints
     self.g, self.lbg, self.ubg = self.get_constraints(self.system, self.t, self.s_flat, self.a)
@@ -63,7 +46,7 @@ class StaticObjectOpt:
     self.cost = self.cost_func(self.t,self.s_flat,self.a)
 
     # Formulate nlp
-    problem = {"x":self.z, "f":self.cost, "g":self.g}
+    problem = {"x":self.z, "f":self.cost, "g":self.g, "p":self.system.ft_goal_param}
     options = {"ipopt.print_level":5,
                "ipopt.max_iter":10000,
                 "ipopt.tol": 1e-4,
@@ -73,21 +56,21 @@ class StaticObjectOpt:
     #options = {"monitor":["nlp_f","nlp_g"]}
     self.solver = nlpsol("S", "ipopt", problem, options)
 
+  def solve_nlp(self,
+               ft_goal, 
+               q0):
+                
+    qnum = self.system.qnum
     # Get initial guess
     self.z0 = self.system.get_initial_guess(self.z, q0)
     t0, s0, a0 = self.system.decvar_unpack(self.z0)
     self.system.collision_constraint(s0)
 
-    #print("\nINITIAL TRAJECTORY")
-    #print("time: {}".format(t0))
-    #print("q: {}".format(q0))
-    #print("dq: {}".format(dq0))
-  
     # Path constraints
     self.z_lb, self.z_ub = self.system.path_constraints(self.z, q0, dq0=np.zeros((1,9)), dq_end=np.zeros((1,9)))
 
     # Set upper and lower bounds for decision variables
-    r = self.solver(x0=self.z0,lbg=self.lbg,ubg=self.ubg,lbx=self.z_lb,ubx=self.z_ub)
+    r = self.solver(x0=self.z0,lbg=self.lbg,ubg=self.ubg,lbx=self.z_lb,ubx=self.z_ub,p=ft_goal)
     z_soln = r["x"]
 
     # Final solution and cost
@@ -128,7 +111,7 @@ class StaticObjectOpt:
       q_cur = q[i, :]
       ft_cur = self.system.FK(q_cur)
       for f_i in range(self.system.fnum):
-        delta = self.ft_goal_list[f_i] - ft_cur[f_i]
+        delta = self.system.ft_goal_param[3*f_i:3*f_i+3] - np.squeeze(ft_cur[f_i])
         cost += 0.5 * delta.T @ Q @ delta
 
     # Add dq to cost, minimize joint velocity..? What is the control input here?
@@ -160,7 +143,7 @@ class StaticObjectOpt:
         lbg.append(0)
         ubg.append(0)
 
-    ft_goal_constraints = system.ft_goal_constraint(s, a, self.ft_goal_list)
+    ft_goal_constraints = system.ft_goal_constraint(s, a)
     for r in range(ft_goal_constraints.shape[0]):
       for c in range(ft_goal_constraints.shape[1]):
         g.append(ft_goal_constraints[r,c])
@@ -171,11 +154,7 @@ class StaticObjectOpt:
     
 def main():
   # Get list of desired fingertip positions
-  ft_goal_list = [
-    np.expand_dims(np.array([0.08457, 0.016751647828266603, 0.07977209510032231]),1),
-    np.expand_dims(np.array([-0.02777764742520991, -0.08161559231227206, 0.07977209510032231]),1),
-    np.expand_dims(np.array([-0.0567923525742952, 0.06486394448412161, 0.07977209510032231]),1)
-    ]
+  ft_goal = np.array([0.08457, 0.016751647828266603, 0.07977209510032231,-0.02777764742520991, -0.08161559231227206, 0.07977209510032231,-0.0567923525742952, 0.06486394448412161, 0.07977209510032231])
 
   q0        = np.array([[0,0.9,-1,0,0.9,-1.7,0,0.9,-1.7]])
   #q0 = np.zeros((1,9))
@@ -187,13 +166,13 @@ def main():
   cube_shape = (move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH, move_cube._CUBE_WIDTH)
 
   opt_problem = StaticObjectOpt(
-               ft_goal_list,
                nGrid     = nGrid,
                dt        = dt,
-               q0        = q0,
                obj_shape = cube_shape,
                obj_pose  = move_cube.Pose(position=np.array([0, 0, 0])),
                )
+
+  opt_problem.solve_nlp(ft_goal, q0)
 
   # Files to save solutions
   today_date = date.today().strftime("%m-%d-%y")
@@ -205,8 +184,8 @@ def main():
   # Save solution in npz file
   np.savez(save_string,
            dt         = opt_problem.dt,
-           q0         = opt_problem.q0,
-           ft_goal_list = ft_goal_list,
+           q0         = q0,
+           ft_goal    = ft_goal,
            t          = opt_problem.t_soln,
            q          = opt_problem.q_soln,
            dq         = opt_problem.dq_soln,
