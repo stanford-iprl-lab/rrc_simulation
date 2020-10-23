@@ -1,6 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits import mplot3d
 
 from rrc_simulation import trifinger_platform
 from rrc_simulation.control.custom_pinocchio_utils import CustomPinocchioUtils
@@ -13,7 +11,7 @@ class FingerModel:
   """
   theta_base: fixed z angle of finger base w.r.t base joint, in radians
   """
-  def __init__(self, theta_base, q_init):
+  def __init__(self, theta_base):
 
     # joint origin xyz values w.r.t previous joint
     self.j1_xyz = [0, 0, 0] # joint 1 w.r.t upper holder joint (joint 0)
@@ -21,18 +19,26 @@ class FingerModel:
     self.j3_xyz = [0.04922, 0, -0.16] # joint 3
     self.j4_xyz = [0.0185, 0, -0.1626] # joint 4
 
-    # Link lengths, from TriFinger paper schematic
+    # Link axis directions
     l1_dir = np.array([0, 1, 0])
     l2_dir = np.array([0, 0, -1])
+    l2_dir = np.array([0, 0, -1])
     l3_dir = np.array([0, 0, -1])
-    l4_dir = np.array([0, -1, 0])
+    l4_dir = np.array([0, 0, -1])
     self.l_dir = [l1_dir, l2_dir, l3_dir, l4_dir]
 
+    # Link offsets
+    l1_off = np.array([0,0,0])
+    l2_off = np.array([0.04,0,0])
+    l3_off = np.array([0.02,0,0])
+    l4_off = np.array([0,0,0])
+    self.l_off = [l1_off, l2_off, l3_off, l4_off]
+
+    # Link lenghts, from TriFinger paper schematic
     l1_len = 0.179 + 0.0195
     l2_len = 0.16
     l3_len = 0.16
-    l4_len = 0.008*2
-
+    l4_len = 0.0
     self.l_len = [l1_len, l2_len, l3_len, l4_len]
 
     self.l_axis = []
@@ -41,22 +47,20 @@ class FingerModel:
 
     self.theta_base = theta_base
 
-    # joint angles
-    self.q = q_init # (3,) np array
-
-    # bounding sphere radius
-    self.r = 0.008 # 8 mm
+    # bounding sphere radii for each link
+    self.r_list = [0.02, 0.02, 0.015, 0.008]
     # number of bounding sphere per link, for each link
-    self.snum_list = [12, 10, 10, 1]
+    self.snum_list = [6, 5, 5, 1]
 
     # define bounding sphere centers for each link, in link frames (lf)
     self.sphere_centers_lf = []
     for i in range(len(self.l_len)):
-      link_centers = np.linspace(self.r*self.l_dir[i], self.l_axis[i]-self.l_dir[i]*self.r, self.snum_list[i])
+      link_centers = np.linspace(self.l_off[i] + self.r_list[i]*self.l_dir[i],
+                                 self.l_off[i] + self.l_axis[i]-self.l_dir[i]*self.r_list[i],
+                                 self.snum_list[i])
+      if i == 3:
+        link_centers = np.zeros((1,3))
       self.sphere_centers_lf.append(link_centers)
-
-    # Test transforming sphere centers to wf
-    self.get_sphere_centers_wf(q_init)
 
   """
   Joint 0 frame wrt base joint
@@ -149,20 +153,7 @@ class FingerModel:
         c_wf = H @ np.append(cur_link_centers[ci,:],1)
         centers_wf[ci, :] = c_wf[0:3]
       sphere_centers_wf.append(centers_wf)
-    print(sphere_centers_wf)
-    print(self.sphere_centers_lf)
 
-    plt.figure()
-    ax = plt.axes(projection="3d")
-    plt.xlabel("x")
-    plt.ylabel("y")
-    for i in range(4):
-      x = sphere_centers_wf[i][:, 0]
-      y = sphere_centers_wf[i][:, 1]
-      z = sphere_centers_wf[i][:, 2]
-      ax.scatter3D(x,y,z,s=200)
-
-    plt.show()
     return sphere_centers_wf
 
 
