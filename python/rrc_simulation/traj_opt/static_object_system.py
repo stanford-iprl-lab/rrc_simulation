@@ -168,6 +168,18 @@ class StaticObjectSystem:
         con_list.append(f)
     return horzcat(*con_list)
 
+  """
+  Collision constraint
+  """
+  def collision_constraint(self, s_flat):
+    con_list = []
+    q, dq  = self.s_unpack(s_flat)
+    
+    ft_pos_list = self.FK(q[0,:])
+    ft_pos_wf = ft_pos_list[0]
+    self.get_pnorm_of_pos_wf(ft_pos_wf)
+    return horzcat(*con_list)
+
 ################################################################################
 # End of constraint functions
 ################################################################################
@@ -215,6 +227,27 @@ class StaticObjectSystem:
       J[:,self.qnum*i:self.qnum*i + self.qnum] = one_finger_J
 
     return J
+
+  """
+  Get cp_param from fingertip position in world frame
+  """ 
+  def get_pnorm_of_pos_wf(self, p_wf):
+    H_w_2_o = self.get_H_w_2_o()
+    ft_pos_of = H_w_2_o @ np.append(p_wf, 1)
+    cp_param = self.get_cp_param_from_pos_of(ft_pos_of[0:3])
+    pnorm = self.get_pnorm(cp_param)
+    return pnorm
+
+  """
+  Get cp_param from pos_of
+  Normalize pos_of to a unit cube
+  """
+  def get_cp_param_from_pos_of(self, p_of):
+    cp_param = []  
+    for i in range(3):
+      param = (2 * p_of[i] + self.obj_shape[i])/self.obj_shape[i] - 1
+      cp_param.append(param)
+    return cp_param
   
   """
   Get pnorm of cp_param tuple
@@ -229,58 +262,12 @@ class StaticObjectSystem:
     return pnorm
 
   """
-  Get 4x4 tranformation matrix from contact point frame to object frame
-  Input:
-  cp: dict with "position" and "orientation" fields in object frame
-  """
-  def get_R_cp_2_o(self, cp):
-    #H = SX.zeros((4,4))
-    
-    quat = cp["orientation"]
-    p = cp["position"]
-    R = utils.get_matrix_from_quaternion(quat)
-
-    return R
-    #H[3,3] = 1
-    #H[0:3,0:3] = R
-    ##H[0:3,3] = p[:]
-    ## Test transformation
-    ##print("calculated: {}".format(H @ np.array([0,0,0,1])))
-    ##print("actual: {}".format(p))
-    #return H
-
-  def get_R_o_2_w(self, x):
-    quat = [x[0,3], x[0,4], x[0,5], x[0,6]]
-    R = utils.get_matrix_from_quaternion(quat)
-    return R
-
-  """
-  Get 4x4 tranformation matrix from object frame to world frame
-  Input:
-  x: object pose [px, py, pz, qw, qx, qy, qz]
-  """
-  def get_H_o_2_w(self, x):
-    H = SX.zeros((4,4))
-    
-    quat = [x[0,3], x[0,4], x[0,5], x[0,6]]
-    R = utils.get_matrix_from_quaternion(quat)
-    p = np.array([x[0,0], x[0,1], x[0,2]])
-
-    H[3,3] = 1
-    H[0:3,0:3] = R
-    H[0:3,3] = p[:]
-    # Test transformation
-    #print("calculated: {}".format(H @ np.array([0,0,0,1])))
-    #print("actual: {}".format(p))
-    return H
-
-  """
   Get 4x4 transformation matrix from world to object frame
   """
-  def get_H_w_2_o(self, x):
-    H = np.zeros((4,4))
-    quat = [x[0,3], x[0,4], x[0,5], x[0,6]]
-    p = np.array([x[0,0], x[0,1], x[0,2]])
+  def get_H_w_2_o(self):
+    H = SX.zeros((4,4))
+    quat = self.obj_pose.orientation
+    p = self.obj_pose.position
     p_inv, quat_inv = utils.invert_transform(p, quat)
     R = utils.get_matrix_from_quaternion(quat_inv)
     H[3,3] = 1
