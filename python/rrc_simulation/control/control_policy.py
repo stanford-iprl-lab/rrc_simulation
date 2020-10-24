@@ -37,7 +37,7 @@ class ImpedanceControllerPolicy:
             self.dt = 0.01
         self.flipping = False
         self.debug_waypoints = debug_waypoints
-        self.draw_bounding_spheres = True
+        self.draw_bounding_spheres = False
         self.set_init_goal(initial_pose, goal_pose)
         self.setup_logging()
         self.finger_waypoints = None
@@ -140,8 +140,8 @@ class ImpedanceControllerPolicy:
         #    self.finger_waypoints_list.append(waypoints)
 
         # Use traj opt to get initial contact points and waypoints to them
-        self.nlp = c_utils.define_static_object_opt()
-        self.ft_waypoints = c_utils.get_waypoints(self.nlp, current_position)
+        self.nlp = c_utils.define_static_object_opt(obj_pose)
+        self.ft_waypoints = c_utils.get_waypoints(self.nlp, self.cp_params, obj_pose.position, obj_pose.orientation, current_position)
       
         # Draw bounding spheres
         if self.draw_bounding_spheres:
@@ -191,7 +191,7 @@ class ImpedanceControllerPolicy:
 
         if self.draw_bounding_spheres:
             # plot bounding spheres
-            centers_wf = self.nlp.system.fingers[self.finger_id_to_viz].get_sphere_centers_wf(current_position[3*self.finger_id_to_viz : 3*self.finger_id_to_viz+3])
+            centers_wf = self.nlp.system.fingers[self.finger_id_to_viz].get_sphere_centers_wf_to_plot(current_position[3*self.finger_id_to_viz : 3*self.finger_id_to_viz+3])
 
             for i in range(4):
               self.sphere_vis_list[i].set_state(centers_wf[i].tolist())
