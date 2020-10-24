@@ -46,7 +46,6 @@ class StaticObjectSystem:
     self.obj_shape = obj_shape
     self.obj_pose  = obj_pose
 
-
     # Define fingers
     self.fingers = []
     for i in range(self.fnum):
@@ -184,10 +183,21 @@ class StaticObjectSystem:
   def collision_constraint(self, s_flat):
     con_list = []
     q, dq  = self.s_unpack(s_flat)
-    
-    ft_pos_list = self.FK(q[0,:])
-    ft_pos_wf = ft_pos_list[0]
-    self.get_pnorm_of_pos_wf(ft_pos_wf)
+
+    # TODO: for now, just consider fingertip
+    for t_i in range(self.nGrid):
+      q_cur = q[t_i, :]
+      for f_i in range(self.fnum): # Each finger
+        centers = self.fingers[f_i].get_sphere_centers_wf(q_cur[self.qnum*f_i:self.qnum*f_i+self.qnum])
+        for l_i in [3]:  # Each link
+          # radius of spheres on link
+          r = self.fingers[f_i].r_list[l_i]
+          for i in range(centers[l_i].shape[0]): # For each sphere center on link
+            c = centers[l_i][i,:]
+            pnorm = self.get_pnorm_of_pos_wf(c)
+
+            f = pnorm - r - 1 
+            con_list.append(f)
     return horzcat(*con_list)
 
 ################################################################################
@@ -243,7 +253,7 @@ class StaticObjectSystem:
   """ 
   def get_pnorm_of_pos_wf(self, p_wf):
     H_w_2_o = self.get_H_w_2_o()
-    ft_pos_of = H_w_2_o @ np.append(p_wf, 1)
+    ft_pos_of = H_w_2_o @ horzcat(p_wf,1).T
     cp_param = self.get_cp_param_from_pos_of(ft_pos_of[0:3])
     pnorm = self.get_pnorm(cp_param)
     return pnorm

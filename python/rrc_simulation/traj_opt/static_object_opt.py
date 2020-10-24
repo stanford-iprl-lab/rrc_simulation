@@ -149,12 +149,21 @@ class StaticObjectOpt:
         g.append(ft_goal_constraints[r,c])
         lbg.append(0)
         ubg.append(np.inf)
+
+    # Collision constraint
+    coll_constraints = system.collision_constraint(s) 
+    for r in range(coll_constraints.shape[0]):
+      for c in range(coll_constraints.shape[1]):
+        g.append(coll_constraints[r,c])
+        lbg.append(0)
+        ubg.append(np.inf)
     
     return vertcat(*g), vertcat(*lbg), vertcat(*ubg)
     
 def main():
   # Get list of desired fingertip positions
-  ft_goal = np.array([0.08457, 0.016751647828266603, 0.07977209510032231,-0.02777764742520991, -0.08161559231227206, 0.07977209510032231,-0.0567923525742952, 0.06486394448412161, 0.07977209510032231])
+  #ft_goal = np.array([0.08457, 0.016751647828266603, 0.07977209510032231,-0.02777764742520991, -0.08161559231227206, 0.07977209510032231,-0.0567923525742952, 0.06486394448412161, 0.07977209510032231])
+  ft_goal = np.array([-0.0325, 0, 0,-0.02777764742520991, -0.08161559231227206, 0.07977209510032231,-0.0567923525742952, 0.06486394448412161, 0.07977209510032231])
 
   q0        = np.array([[0,0.9,-1,0,0.9,-1.7,0,0.9,-1.7]])
   #q0 = np.zeros((1,9))
