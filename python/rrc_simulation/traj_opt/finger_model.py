@@ -1,5 +1,5 @@
 import numpy as np
-
+from casadi import *
 from rrc_simulation import trifinger_platform
 from rrc_simulation.control.custom_pinocchio_utils import CustomPinocchioUtils
 
@@ -48,7 +48,7 @@ class FingerModel:
     self.theta_base = theta_base
 
     # bounding sphere radii for each link
-    self.r_list = [0.02, 0.02, 0.015, 0.008]
+    self.r_list = [0.02, 0.02, 0.015, 0.4]
     # number of bounding sphere per link, for each link
     self.snum_list = [6, 5, 5, 1]
 
@@ -61,6 +61,8 @@ class FingerModel:
       if i == 3:
         link_centers = np.zeros((1,3))
       self.sphere_centers_lf.append(link_centers)
+
+    self.q = None
 
   """
   Joint 0 frame wrt base joint
@@ -137,6 +139,31 @@ class FingerModel:
     self.q = q 
     sphere_centers_wf = []
     for i in range(len(self.l_axis)):
+      centers_wf = SX.zeros(self.sphere_centers_lf[i].shape) 
+      if i == 0:
+        H = self.H_0_wrt_base()@self.H_1_wrt_0()
+      elif i == 1:
+        H = self.H_0_wrt_base()@self.H_1_wrt_0()@self.H_2_wrt_1()
+      elif i == 2:
+        H = self.H_0_wrt_base()@self.H_1_wrt_0()@self.H_2_wrt_1()@self.H_3_wrt_2()
+      else: # i == 3
+        H = self.H_0_wrt_base()@self.H_1_wrt_0()@self.H_2_wrt_1()@self.H_3_wrt_2()@self.H_4_wrt_3()
+
+      # Transform each sphere center on the link by H
+      cur_link_centers = self.sphere_centers_lf[i]
+      for ci in range(cur_link_centers.shape[0]):
+        c_wf = H @ np.append(cur_link_centers[ci,:],1)
+        centers_wf[ci, :] = c_wf[0:3]
+      sphere_centers_wf.append(centers_wf)
+    return sphere_centers_wf
+
+  """
+  Transform sphere centers for each link to world frame, given current q
+  """
+  def get_sphere_centers_wf_to_plot(self, q):
+    self.q = q 
+    sphere_centers_wf = []
+    for i in range(len(self.l_axis)):
       centers_wf = np.zeros(self.sphere_centers_lf[i].shape) 
       if i == 0:
         H = self.H_0_wrt_base()@self.H_1_wrt_0()
@@ -153,7 +180,6 @@ class FingerModel:
         c_wf = H @ np.append(cur_link_centers[ci,:],1)
         centers_wf[ci, :] = c_wf[0:3]
       sphere_centers_wf.append(centers_wf)
-
     return sphere_centers_wf
 
 
