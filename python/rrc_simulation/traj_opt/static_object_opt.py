@@ -85,8 +85,8 @@ class StaticObjectOpt:
       ft_list = self.system.FK(self.q_soln[t_i, :])
       for f_i in range(self.system.fnum):
         self.ft_pos_soln[t_i, f_i * qnum: f_i * qnum + qnum] = ft_list[f_i].T
-    print(self.ft_pos_soln)
-    print(self.a_soln)
+    #print(self.ft_pos_soln)
+    #print(self.a_soln)
 
     # Save solver time
     #statistics = self.solver.stats()
@@ -101,6 +101,8 @@ class StaticObjectOpt:
     Q = np.eye(self.system.qnum) * 2
 
     q,dq = self.system.s_unpack(s_flat)
+
+    qnum = self.system.qnum
 
     # Slack variable penalties
     for i in range(a.shape[0]):
@@ -118,6 +120,21 @@ class StaticObjectOpt:
     for i in range(t.shape[0]):
       dq_cur = dq[i, :]
       cost += 0.5 * dq_cur @ R @ dq_cur.T
+
+    # Collision cost
+    collision_weight = 0.005
+    for t_i in range(t.shape[0]):
+      q_cur = q[t_i, :]
+      for f_i in range(self.system.fnum): # Each finger
+        centers = self.system.fingers[f_i].get_sphere_centers_wf(q_cur[qnum*f_i:qnum*f_i+qnum])
+        for l_i in [3]:  # Each link
+          # radius of spheres on link
+          r = self.system.fingers[f_i].r_list[l_i]
+          for i in range(centers[l_i].shape[0]): # For each sphere center on link
+            c = centers[l_i][i,:]
+            pnorm = self.system.get_pnorm_of_pos_wf(c)
+
+            cost -= pnorm * collision_weight
 
     return cost
 
@@ -151,13 +168,21 @@ class StaticObjectOpt:
         ubg.append(np.inf)
 
     # Collision constraint
-    coll_constraints = system.collision_constraint(s) 
-    for r in range(coll_constraints.shape[0]):
-      for c in range(coll_constraints.shape[1]):
-        g.append(coll_constraints[r,c])
+    #coll_constraints = system.collision_constraint(s) 
+    #for r in range(coll_constraints.shape[0]):
+    #  for c in range(coll_constraints.shape[1]):
+    #    g.append(coll_constraints[r,c])
+    #    lbg.append(0)
+    #    ubg.append(np.inf)
+
+    # Fingertip radius constraint
+    ft_r_constraints = system.arena_constraint(s) 
+    for r in range(ft_r_constraints.shape[0]):
+      for c in range(ft_r_constraints.shape[1]):
+        g.append(ft_r_constraints[r,c])
         lbg.append(0)
         ubg.append(np.inf)
-    
+
     return vertcat(*g), vertcat(*lbg), vertcat(*ubg)
     
 def main():

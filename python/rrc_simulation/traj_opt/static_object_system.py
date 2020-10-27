@@ -55,6 +55,9 @@ class StaticObjectSystem:
     # fingertip goal parameters
     self.ft_goal_param = SX.sym("ft", 3*self.fnum)
 
+    # maximum fingertip radius
+    self.MAX_FT_R = 0.195
+
 ################################################################################
 # Decision variable management helper functions
 ################################################################################
@@ -189,7 +192,7 @@ class StaticObjectSystem:
       q_cur = q[t_i, :]
       for f_i in range(self.fnum): # Each finger
         centers = self.fingers[f_i].get_sphere_centers_wf(q_cur[self.qnum*f_i:self.qnum*f_i+self.qnum])
-        for l_i in [3]:  # Each link
+        for l_i in [2]:  # Each link
           # radius of spheres on link
           r = self.fingers[f_i].r_list[l_i]
           for i in range(centers[l_i].shape[0]): # For each sphere center on link
@@ -200,6 +203,23 @@ class StaticObjectSystem:
             con_list.append(f)
     return horzcat(*con_list)
 
+  """
+  Constraint to keep end effectors within a pre-defined radius
+  """
+  def arena_constraint(self, s_flat):
+    q, dq  = self.s_unpack(s_flat)
+    # Get list of ft positions at q_end
+    con_list = []
+    for t_i in range(10,self.nGrid):
+      ft = self.FK(q[t_i,:])
+      for f_i in range(self.fnum):
+        r = norm_2(ft[f_i][0:2,0])
+        z = ft[f_i][2,0]
+        con_list.append(self.MAX_FT_R - r) # within max xy radius 
+        
+        # z coord is above ground
+        con_list.append(z - 0.01)
+    return horzcat(*con_list)
 ################################################################################
 # End of constraint functions
 ################################################################################
