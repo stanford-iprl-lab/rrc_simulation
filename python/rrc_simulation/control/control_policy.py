@@ -142,7 +142,7 @@ class ImpedanceControllerPolicy:
         # Use traj opt to get initial contact points and waypoints to them
         self.nlp = c_utils.define_static_object_opt(obj_pose)
         self.ft_waypoints = c_utils.get_waypoints(self.nlp, self.cp_params, obj_pose.position, obj_pose.orientation, current_position)
-      
+        
         # Draw bounding spheres
         if self.draw_bounding_spheres:
             self.sphere_vis_list = []
@@ -163,7 +163,7 @@ class ImpedanceControllerPolicy:
         else:
             object_pose = self.platform.get_object_pose(0)
         if self.pre_traj_waypoint_i < self.ft_waypoints.shape[0]:
-            print(self.pre_traj_waypoint_i)
+            #print(self.pre_traj_waypoint_i)
         #if self.pre_traj_waypoint_i < len(self.finger_waypoints_list[0]):
             # Get fingertip goals from finger_waypoints_list
             self.fingertip_goal_list = []
@@ -183,6 +183,8 @@ class ImpedanceControllerPolicy:
 
             self.fingertip_goal_list = c_utils.get_cp_wf_list_from_cp_params(
                     self.cp_params, next_cube_pos_wf, next_cube_quat_wf)
+            #print(self.fingertip_goal_list)
+            #print(next_cube_pos_wf, next_cube_quat_wf)
             # Get target contact forces in world frame 
             self.tip_forces_wf = self.l_wf_soln[self.traj_waypoint_i, :]
             self.tol = 0.007
@@ -212,17 +214,18 @@ class ImpedanceControllerPolicy:
             if self.pre_traj_waypoint_i < self.ft_waypoints.shape[0]:
                 self.pre_traj_waypoint_i += 1
                 self.goal_reached = False
-            if self.flipping:
-                fingertips_current = self.custom_pinocchio_utils.forward_kinematics(
-                        current_position)
-                self.flipping_wp, self.done_with_primitive = c_utils.get_flipping_waypoint(
-                        object_pose, self.init_face, self.goal_face,
-                        fingertips_current, self.fingertips_init, self.cp_params)
-                self.goal_reached = False
-            elif self.traj_waypoint_i < self.nGrid:
-                # print("trajectory waypoint: {}".format(self.traj_waypoint_i))
-                self.traj_waypoint_i += 1
-                self.goal_reached = False
+            else:
+              if self.flipping:
+                  fingertips_current = self.custom_pinocchio_utils.forward_kinematics(
+                          current_position)
+                  self.flipping_wp, self.done_with_primitive = c_utils.get_flipping_waypoint(
+                          object_pose, self.init_face, self.goal_face,
+                          fingertips_current, self.fingertips_init, self.cp_params)
+                  self.goal_reached = False
+              elif self.traj_waypoint_i < self.nGrid:
+                  # print("trajectory waypoint: {}".format(self.traj_waypoint_i))
+                  self.traj_waypoint_i += 1
+                  self.goal_reached = False
         else:
             if self.flipping and self.step_count > self.max_step_count:
                 self.done_with_primitive = True
