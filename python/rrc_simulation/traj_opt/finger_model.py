@@ -48,7 +48,7 @@ class FingerModel:
     self.theta_base = theta_base
 
     # bounding sphere radii for each link
-    self.r_list = [0.02, 0.02, 0.015, 0.4]
+    self.r_list = [0.02, 0.02, 0.15, 0.4]
     # number of bounding sphere per link, for each link
     self.snum_list = [6, 5, 5, 1]
 
