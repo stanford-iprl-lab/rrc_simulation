@@ -10,11 +10,11 @@ Script to compute analytical Jacobian with sympy
 # Fixed values from URDF
 theta_base = symbols("theta_base")
 
-# joint origin xyz values
+# joint origin xyz values w.r.t previous joint
 j1_xyz = [0, 0, 0] # joint 1
-j2_xyz = [0.01685, 0.0505, 0]
-j3_xyz = [0.04922, 0, -0.16]
-j4_xyz = [0.0185, 0, -0.1626]
+j2_xyz = [0.01685, 0.0505, 0] # joint 2
+j3_xyz = [0.04922, 0, -0.16] # joint 3
+j4_xyz = [0.0185, 0, -0.1626] # joint 4
 
 q1, q2, q3 = symbols("q1 q2 q3")
 
@@ -68,8 +68,8 @@ p = np.array([[0],[0],[0],[1]])
 # Compute jacobian
 eef_wf = H_4_wrt_0 @ p
 eef_wf = eef_wf[0:3, :]
-print("sympy eef_wf")
-print(eef_wf)
+#print("sympy eef_wf")
+#print(eef_wf)
 
 dq1 = eef_wf.diff(q1)
 dq2 = eef_wf.diff(q2)
@@ -77,17 +77,17 @@ dq3 = eef_wf.diff(q3)
 
 J = dq1.row_join(dq2).row_join(dq3)
 #print("sympy J")
-#pprint(J)
+#print(J)
 
 ############################################
 # Test forward kinematics , and Jacobian for one finger
 ############################################
-f_id = 2
-theta_base_deg = -240 # Fixed andle of finger base w.r.t. center holder {0, 120, 240} degrees
+f_id = 0
+theta_base_deg = 0 # Fixed andle of finger base w.r.t. center holder {0, 120, 240} degrees
 theta_base_val = theta_base_deg * (np.pi/180)
 
-q1_val = 0.5
-q2_val = 0.9
+q1_val = 0
+q2_val = 0.7
 q3_val = -1.7
 
 q_all = np.array([q1_val, q2_val, q3_val,q1_val, q2_val, q3_val,q1_val, q2_val, q3_val])
@@ -112,6 +112,9 @@ Ji_pin = custom_pinocchio_utils.get_tip_link_jacobian(f_id, q_all)
 print("Jacobian pinocchio:")
 print(Ji_pin[:3, 3*f_id:3*f_id+3])
 
+J_val = J.subs({"q1": q1_val, "q2": q2_val, "q3": q3_val, "theta_base": theta_base_val})
+print(J_val)
+quit()
 print("Jacobian columns:")
 dq1_val = dq1.subs({"q1": q1_val, "q2": q2_val, "q3": q3_val, "theta_base": theta_base_val})
 print(dq1_val)
