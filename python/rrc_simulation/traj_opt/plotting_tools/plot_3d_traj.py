@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
-from itertools import product, combinations
 
 import argparse
 import os
@@ -35,7 +34,7 @@ def plot_traj(npz_file_string, save_string, save_plot=True):
   dq_soln = npzfile["dq"]
   dt      = npzfile["dt"]
   ft_pos  = npzfile["ft_pos"]
-  ft_goal_list = npzfile["ft_goal_list"]
+  #ft_goal_list = npzfile["ft_goal_list"]
   
   print("*****************************************************************")
   print("PLOTTING")
@@ -63,14 +62,14 @@ def plot_traj(npz_file_string, save_string, save_plot=True):
     z = ft_pos[:, 3 * f_i + 2]
     ax.scatter3D(x,y,z,c=color_list[f_i])
 
-    xg = ft_goal_list[f_i][0,0]
-    yg = ft_goal_list[f_i][1,0]
-    zg = ft_goal_list[f_i][2,0]
-    ax.scatter3D(xg, yg, zg,marker='*',c=color_list[f_i])
+    #xg = ft_goal_list[f_i][0,0]
+    #yg = ft_goal_list[f_i][1,0]
+    #zg = ft_goal_list[f_i][2,0]
+    #ax.scatter3D(xg, yg, zg,marker='*',c=color_list[f_i])
 
   # Plot cube corners
   corners = move_cube.get_cube_corner_positions(move_cube.Pose())
-  ax.plot3D(corners[:,0], corners[:,1], corners[:,2])
+  ax.scatter3D(corners[:,0], corners[:,1], corners[:,2])
 
   plt.show()
 
