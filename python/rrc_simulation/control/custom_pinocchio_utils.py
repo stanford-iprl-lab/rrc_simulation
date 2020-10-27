@@ -75,3 +75,41 @@ class CustomPinocchioUtils(PinocchioUtils):
     dq = Jinv.dot(xdes - xcurrent)
     qnext = pinocchio.integrate(self.robot_model, q0, dt * dq)
     return qnext
+
+  def link_specific_forward_kinematics(self, joint_positions):
+    """
+    Compute end effector positions for the given joint configuration.
+
+    Args:
+        finger (SimFinger): a SimFinger object
+        joint_positions (list): Flat list of angular joint positions.
+
+    Returns:
+        List of end-effector positions. Each position is given as an
+        np.array with x,y,z positions.
+    """
+
+    # Get link ids for specified links
+    link_names = [
+        #"finger_upper_link_0",
+        "finger_middle_link_0",
+        #"finger_lower_link_0",
+        #"finger_upper_link_120",
+        "finger_middle_link_120",
+        #"finger_lower_link_120",
+        #"finger_upper_link_240",
+        "finger_middle_link_240",
+        #"finger_lower_link_240",
+    ]
+    link_ids = [
+      self.robot_model.getFrameId(link_name)
+      for link_name in link_names
+    ]
+    pinocchio.framesForwardKinematics(
+      self.robot_model, self.data, joint_positions,
+    )
+
+    return [
+      np.asarray(self.data.oMf[link_id].translation).reshape(-1).tolist()
+      for link_id in link_ids
+    ]
