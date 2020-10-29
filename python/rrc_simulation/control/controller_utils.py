@@ -83,7 +83,9 @@ def impedance_controller(
                         dq_current,
                         custom_pinocchio_utils,
                         tip_forces_wf = None,
-                        tol           = 0.008
+                        tol           = 0.008,
+                        Kp            = [200, 200, 400],
+                        Kv            = [7,7,7],
                         ):
   torque = 0
   goal_reached = True
@@ -100,7 +102,9 @@ def impedance_controller(
                                                 dq_current,
                                                 custom_pinocchio_utils,
                                                 tip_force_wf = f_wf,
-                                                tol          = tol
+                                                tol          = tol,
+                                                Kp           = Kp,
+                                                Kv           = Kv
                                                 )
     goal_reached = goal_reached and finger_goal_reached
     torque += finger_torque
@@ -125,15 +129,17 @@ def impedance_controller_single_finger(
                                       dq_current,
                                       custom_pinocchio_utils,
                                       tip_force_wf = None,
-                                      tol          = 0.008
+                                      tol          = 0.008,
+                                      Kp           = [200, 200, 400],
+                                      Kv           = [7,7,7],
                                       ):
-  Kp_x = 200
-  Kp_y = 200
-  Kp_z = 400
+  Kp_x = Kp[0]
+  Kp_y = Kp[1]
+  Kp_z = Kp[2]
   Kp = np.diag([Kp_x, Kp_y, Kp_z])
-  Kv_x = 7
-  Kv_y = 7
-  Kv_z = 7
+  Kv_x = Kv[0]
+  Kv_y = Kv[1]
+  Kv_z = Kv[2]
   Kv = np.diag([Kv_x, Kv_y, Kv_z])
 
   # Compute current fingertip position
