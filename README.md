@@ -1,4 +1,4 @@
-Team Yoda Phase 1 Submission
+Phase 1 Submission
 ===============================
 ## Setup:
 1. Install the rrc_simulation package by following the steps on [this page](https://people.tuebingen.mpg.de/felixwidmaier/realrobotchallenge/simulation_phase/installation.html). Note that in step 1, instead of cloning their repo, you'll want to clone the IPRL fork, and git checkout phase_1_submission. This will create a conda env with all the necessary pacakages (except for spinning up, see step 2)
